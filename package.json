@@ -1,0 +1,40 @@
+{
+  "name": "suryodaya-packers-movers-demo",
+  "version": "1.0.0",
+  "description": "AI-powered automation system for Suryodaya Packers & Movers",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js router.test.ts",
+    "test:live:gemini": "RUN_LIVE_TESTS=true node --experimental-vm-modules node_modules/jest/bin/jest.js live-gemini",
+    "test:live:claude": "RUN_LIVE_TESTS=true node --experimental-vm-modules node_modules/jest/bin/jest.js live-claude",
+    "test:live:failover": "RUN_LIVE_TESTS=true node --experimental-vm-modules node_modules/jest/bin/jest.js forced-failover",
+    "lint": "eslint src --ext .ts"
+  },
+  "keywords": ["ai", "packers", "movers", "automation"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.11.24",
+    "@typescript-eslint/eslint-plugin": "^7.1.0",
+    "@typescript-eslint/parser": "^7.1.0",
+    "eslint": "^8.57.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.2",
+    "tsx": "^4.7.1",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "zod": "^3.22.4",
+    "zod-to-json-schema": "^3.22.4"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
