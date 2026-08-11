@@ -15,4 +15,5 @@ export default {
   },
   testMatch: ['**/*.test.ts'],
   collectCoverageFrom: ['src/**/*.ts', '!src/**/*.test.ts'],
+  testTimeout: 30000, // 30 seconds for live API tests
 };

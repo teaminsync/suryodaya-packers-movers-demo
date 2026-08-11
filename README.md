@@ -35,19 +35,25 @@ cp .env.example .env
 #### Required in all modes:
 ```
 GEMINI_API_KEY=your_gemini_key_here
-GEMINI_MODEL=gemini-1.5-flash
+GEMINI_MODEL=gemini-3.6-flash
 ```
 
 #### Optional (enables PRODUCTION mode):
 ```
 ANTHROPIC_API_KEY=your_anthropic_key_here
-CLAUDE_MODEL=claude-3-5-sonnet-20241022
+CLAUDE_MODEL=claude-sonnet-5
 ```
 
-#### Optional override (for local dev):
+#### Optional override (for local dev cost control):
 ```
-AI_FORCE_PROVIDER=gemini    # or "claude"
+AI_FORCE_PROVIDER=gemini
 ```
+
+**Note**: Only `gemini` is supported - used to avoid Claude API costs during development when a valid Anthropic key exists. Leave blank for automatic mode detection.
+
+**Model strings verified from official docs:**
+- Claude: `claude-sonnet-5` from [platform.claude.com/docs](https://platform.claude.com/docs/en/about-claude/models/overview)
+- Gemini: `gemini-3.6-flash` from [ai.google.dev/gemini-api/docs](https://ai.google.dev/gemini-api/docs/latest-model)
 
 ## Running
 
@@ -66,7 +72,7 @@ npm start
 
 ### Unit Tests (mocked providers)
 ```bash
-npm test
+npm run test:unit
 ```
 
 ### Live API Tests (REAL calls)
@@ -75,22 +81,20 @@ npm test
 
 #### Test 6.1: Gemini in DEMO mode
 ```bash
-# Ensure ANTHROPIC_API_KEY is NOT set
-RUN_LIVE_TESTS=true npm test -- live-gemini
+npm run test:live:gemini
 ```
 
 #### Test 6.2: Claude in PRODUCTION mode
 ```bash
-# Ensure ANTHROPIC_API_KEY IS set and valid
-RUN_LIVE_TESTS=true npm test -- live-claude-fallback
+npm run test:live:claude
 ```
 
 #### Test 6.3: Forced failover
 ```bash
-# Requires valid ANTHROPIC_API_KEY set initially
-# Test will temporarily corrupt CLAUDE_MODEL to trigger failover
-RUN_LIVE_TESTS=true npm test -- forced-failover
+npm run test:live:failover
 ```
+
+See `TESTING.md` for detailed instructions and evidence requirements.
 
 ## Project Structure
 

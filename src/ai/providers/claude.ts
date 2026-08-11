@@ -62,7 +62,7 @@ export class ClaudeAdapter implements AIProviderAdapter {
 
   constructor() {
     this.apiKey = process.env.ANTHROPIC_API_KEY || "";
-    this.model = process.env.CLAUDE_MODEL || "claude-3-5-sonnet-20241022";
+    this.model = process.env.CLAUDE_MODEL || "claude-sonnet-5";
 
     if (!this.apiKey) {
       throw new Error("ANTHROPIC_API_KEY is required for Claude adapter");
@@ -81,10 +81,14 @@ export class ClaudeAdapter implements AIProviderAdapter {
     const timeout = hasImages ? DEFAULT_TIMEOUT_VISION_MS : DEFAULT_TIMEOUT_TEXT_MS;
 
     // Convert zod schema to JSON Schema for Claude's tool definition
-    const jsonSchema = zodToJsonSchema(request.responseSchema as any, {
-      name: "response",
+    // Call without 'name' option to get inline schema, not a $ref wrapper
+    const rawSchema = zodToJsonSchema(request.responseSchema as any, {
       $refStrategy: "none",
     }) as Record<string, unknown>;
+
+    // Remove top-level JSON Schema meta-fields
+    // Keep the actual schema content (type, properties, etc.)
+    const { $schema, definitions, ...jsonSchema } = rawSchema;
 
     // Build user message content with text + images
     const userContent: ClaudeMessage["content"] = [];

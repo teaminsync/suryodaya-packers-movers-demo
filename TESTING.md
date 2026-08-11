@@ -30,7 +30,7 @@ This document contains instructions for running the **REAL API tests** required 
 ```bash
 # In your .env file:
 GEMINI_API_KEY=your_actual_gemini_key
-GEMINI_MODEL=gemini-1.5-flash
+GEMINI_MODEL=gemini-3.6-flash
 
 # Make sure this is NOT set or is commented out:
 # ANTHROPIC_API_KEY=
@@ -61,10 +61,10 @@ npm run test:live:gemini
 ```bash
 # In your .env file:
 GEMINI_API_KEY=your_actual_gemini_key
-GEMINI_MODEL=gemini-1.5-flash
+GEMINI_MODEL=gemini-3.6-flash
 
 ANTHROPIC_API_KEY=your_actual_anthropic_key
-CLAUDE_MODEL=claude-3-5-sonnet-20241022
+CLAUDE_MODEL=claude-sonnet-5
 ```
 
 **Run**:
@@ -94,7 +94,7 @@ npm run test:live:claude
 # Same as Test 6.2 - start with valid keys in PRODUCTION mode
 GEMINI_API_KEY=your_actual_gemini_key
 ANTHROPIC_API_KEY=your_actual_anthropic_key
-CLAUDE_MODEL=claude-3-5-sonnet-20241022
+CLAUDE_MODEL=claude-sonnet-5
 ```
 
 **Run**:
@@ -121,7 +121,7 @@ npm run test:live:failover
 
 ---
 
-## Test 6.4: Unit Tests (Mocked)
+## Unit Tests (Mocked)
 
 These don't make real API calls - they test routing logic with mocks.
 
@@ -160,12 +160,25 @@ No special setup needed - these always pass if the router logic is correct.
 
 ## Cost Estimates
 
-Approximate API costs per test run (as of Jan 2024):
+Approximate API costs per test run (as of Aug 2026):
 
-- **Gemini 1.5 Flash**: Free tier covers testing, or ~$0.0001 per request
-- **Claude 3.5 Sonnet**: ~$0.003 per text request, ~$0.015 per vision request
+- **Gemini 3.6 Flash**: Free tier covers testing, or ~$0.0001 per request
+- **Claude Sonnet 5**: ~$0.003 per text request, ~$0.015 per vision request
 
 Running all three test suites: < $0.05 total
+
+---
+
+## Evidence Checklist
+
+For each test (6.1, 6.2, 6.3), provide:
+
+- [ ] Complete terminal output (copy-paste, not summary)
+- [ ] Startup mode detection log line
+- [ ] Structured call result JSON logs
+- [ ] Raw response data showing schema compliance
+- [ ] Confirmation of `providerUsed` and `wasFailover` values
+- [ ] Any warnings or unexpected behavior
 
 ---
 

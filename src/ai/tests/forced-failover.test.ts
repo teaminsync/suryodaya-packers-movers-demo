@@ -15,6 +15,7 @@
  * 3. OR temporarily swap in invalid ANTHROPIC_API_KEY after initialization
  */
 
+import "dotenv/config";
 import { z } from "zod";
 import { aiRouter } from "../router.js";
 import { AIRequest } from "../types.js";

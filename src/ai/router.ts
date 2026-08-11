@@ -42,19 +42,26 @@ export class AIRouter {
       return;
     }
 
-    const forceProvider = process.env.AI_FORCE_PROVIDER as
-      | "claude"
-      | "gemini"
-      | undefined;
+    const forceProvider = process.env.AI_FORCE_PROVIDER;
 
-    // Manual override path
-    if (forceProvider) {
+    // Manual override path (Gemini only - for cost control during dev)
+    if (forceProvider === "gemini") {
       console.warn(
-        `[AI Router] AI_FORCE_PROVIDER is set to "${forceProvider}" - bypassing auto-detection`
+        `[AI Router] AI_FORCE_PROVIDER=gemini - forcing Gemini even if Anthropic key present`
       );
-      await this.initializeWithForcedProvider(forceProvider);
+      this.config = {
+        mode: "DEMO",
+        primary: new GeminiAdapter(),
+      };
+      console.info("🔧 AI mode: FORCED DEMO (Gemini primary, no fallback)");
       this.initialized = true;
       return;
+    }
+
+    if (forceProvider && forceProvider !== "gemini") {
+      throw new Error(
+        `AI_FORCE_PROVIDER must be "gemini" or unset. Got: "${forceProvider}"`
+      );
     }
 
     // Auto-detection path
@@ -108,25 +115,6 @@ export class AIRouter {
       "🎮 AI mode: DEMO (no valid Anthropic key found, Gemini primary, no fallback configured)"
     );
     this.initialized = true;
-  }
-
-  private async initializeWithForcedProvider(
-    provider: "claude" | "gemini"
-  ): Promise<void> {
-    if (provider === "claude") {
-      this.config = {
-        mode: "PRODUCTION",
-        primary: new ClaudeAdapter(),
-        fallback: new GeminiAdapter(),
-      };
-      console.info("🔧 AI mode: FORCED PRODUCTION (Claude primary / Gemini fallback)");
-    } else {
-      this.config = {
-        mode: "DEMO",
-        primary: new GeminiAdapter(),
-      };
-      console.info("🔧 AI mode: FORCED DEMO (Gemini primary, no fallback)");
-    }
   }
 
   /**
@@ -274,6 +262,11 @@ export class AIRouter {
         usage: response.usage,
       };
     } catch (validationError) {
+      // Log the actual response for debugging
+      console.error(
+        `[AI Router] Schema validation failed for ${provider.name}:`,
+        JSON.stringify(response.raw, null, 2)
+      );
       throw new AISchemaValidationError(
         `Response from ${provider.name} failed schema validation`,
         provider.name,

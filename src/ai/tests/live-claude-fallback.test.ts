@@ -9,6 +9,7 @@
  * - Paste back: startup log, structured call logs, raw responses, providerUsed confirmation
  */
 
+import "dotenv/config";
 import { z } from "zod";
 import { aiRouter } from "../router.js";
 import { AIRequest } from "../types.js";

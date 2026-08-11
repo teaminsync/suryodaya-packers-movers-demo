@@ -57,7 +57,7 @@ export class GeminiAdapter implements AIProviderAdapter {
 
   constructor() {
     this.apiKey = process.env.GEMINI_API_KEY || "";
-    this.model = process.env.GEMINI_MODEL || "gemini-1.5-flash";
+    this.model = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 
     if (!this.apiKey) {
       throw new Error("GEMINI_API_KEY is required for Gemini adapter");
@@ -76,10 +76,18 @@ export class GeminiAdapter implements AIProviderAdapter {
     const timeout = hasImages ? DEFAULT_TIMEOUT_VISION_MS : DEFAULT_TIMEOUT_TEXT_MS;
 
     // Convert zod schema to JSON Schema
-    const jsonSchema = zodToJsonSchema(request.responseSchema as any, {
-      name: "response",
+    // Call without 'name' option to get inline schema, not a $ref wrapper
+    const rawSchema = zodToJsonSchema(request.responseSchema as any, {
       $refStrategy: "none",
     }) as Record<string, unknown>;
+
+    // Remove JSON Schema fields that Gemini doesn't accept
+    // Gemini supports: type, properties, items, required, enum
+    // Gemini rejects: $schema, definitions, additionalProperties
+    const { $schema, definitions, additionalProperties, ...jsonSchema } = rawSchema;
+    
+    // LOG: What's actually being sent to Gemini?
+    console.debug("[Gemini] Schema sent to API:", JSON.stringify(jsonSchema, null, 2));
 
     // Build user content parts: text + images
     const userParts: GeminiPart[] = [];

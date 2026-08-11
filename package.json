@@ -10,12 +10,17 @@
     "dev": "tsx watch src/index.ts",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js router.test.ts",
-    "test:live:gemini": "RUN_LIVE_TESTS=true node --experimental-vm-modules node_modules/jest/bin/jest.js live-gemini",
-    "test:live:claude": "RUN_LIVE_TESTS=true node --experimental-vm-modules node_modules/jest/bin/jest.js live-claude",
-    "test:live:failover": "RUN_LIVE_TESTS=true node --experimental-vm-modules node_modules/jest/bin/jest.js forced-failover",
+    "test:live:gemini": "cross-env RUN_LIVE_TESTS=true node --experimental-vm-modules node_modules/jest/bin/jest.js live-gemini",
+    "test:live:claude": "cross-env RUN_LIVE_TESTS=true node --experimental-vm-modules node_modules/jest/bin/jest.js live-claude",
+    "test:live:failover": "cross-env RUN_LIVE_TESTS=true node --experimental-vm-modules node_modules/jest/bin/jest.js forced-failover",
     "lint": "eslint src --ext .ts"
   },
-  "keywords": ["ai", "packers", "movers", "automation"],
+  "keywords": [
+    "ai",
+    "packers",
+    "movers",
+    "automation"
+  ],
   "author": "",
   "license": "MIT",
   "devDependencies": {
@@ -23,6 +28,7 @@
     "@types/node": "^20.11.24",
     "@typescript-eslint/eslint-plugin": "^7.1.0",
     "@typescript-eslint/parser": "^7.1.0",
+    "cross-env": "^10.1.0",
     "eslint": "^8.57.0",
     "jest": "^29.7.0",
     "ts-jest": "^29.1.2",
