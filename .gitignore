@@ -2,6 +2,9 @@
 .env
 .env.local
 
+# Runtime state
+suryodaya.db
+
 # Dependencies
 node_modules/
 

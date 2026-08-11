@@ -5,9 +5,14 @@
 import "dotenv/config";
 import express from "express";
 import { verifyWebhook, handleWebhook } from "./whatsapp/webhook.js";
+import { aiRouter } from "./ai/router.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Initialize AI router
+await aiRouter.initialize();
+console.log("✅ AI Router initialized");
 
 // Parse JSON bodies
 app.use(express.json());
