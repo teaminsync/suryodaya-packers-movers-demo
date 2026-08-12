@@ -18,12 +18,12 @@ export interface Lead {
   origin: string | null;
   destination: string | null;
   urgency: string | null;
-  has_special_items: number; // SQLite INTEGER (0/1)
+  has_special_items: boolean;
   special_items: string | null; // JSON array as text
   estimated_volume: string | null;
-  requires_packing: number; // SQLite INTEGER (0/1)
+  requires_packing: boolean;
   ai_provider_used: string | null; // 'claude' | 'gemini'
-  ai_was_failover: number; // SQLite INTEGER (0/1)
+  ai_was_failover: boolean;
   raw_enquiry_text: string | null;
   created_at: string;
   updated_at: string;

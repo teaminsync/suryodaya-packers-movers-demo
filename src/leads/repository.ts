@@ -3,7 +3,7 @@
  */
 
 import { randomUUID } from "crypto";
-import { getDb, saveDatabase } from "./db.js";
+import { sql } from "./db.js";
 import type {
   Lead,
   BookingOffer,
@@ -15,9 +15,10 @@ import type {
  * Check if a message has already been processed (idempotency)
  */
 export async function isMessageProcessed(wamid: string): Promise<boolean> {
-  const db = await getDb();
-  const result = db.exec("SELECT wamid FROM processed_messages WHERE wamid = ?", [wamid]);
-  return result.length > 0 && result[0].values.length > 0;
+  const result = await sql`
+    SELECT wamid FROM processed_messages WHERE wamid = ${wamid}
+  `;
+  return result.length > 0;
 }
 
 /**
@@ -27,29 +28,26 @@ export async function markMessageProcessed(
   wamid: string,
   leadId: string | null
 ): Promise<void> {
-  const db = await getDb();
-  db.run(
-    "INSERT INTO processed_messages (wamid, lead_id, processed_at) VALUES (?, ?, ?)",
-    [wamid, leadId, new Date().toISOString()]
-  );
-  saveDatabase();
+  await sql`
+    INSERT INTO processed_messages (wamid, lead_id, processed_at)
+    VALUES (${wamid}, ${leadId}, ${new Date().toISOString()})
+  `;
 }
 
 /**
  * Find an active lead by WhatsApp number (not yet booked)
  */
-export async function findActiveLead(whatsappNumber: string): Promise<Lead | undefined> {
-  const db = await getDb();
-  const result = db.exec(
-    "SELECT * FROM leads WHERE whatsapp_number = ? AND status != 'booked' ORDER BY created_at DESC LIMIT 1",
-    [whatsappNumber]
-  );
-
-  if (result.length === 0 || result[0].values.length === 0) {
-    return undefined;
-  }
-
-  return rowToLead(result[0].columns, result[0].values[0]);
+export async function findActiveLead(
+  whatsappNumber: string
+): Promise<Lead | undefined> {
+  const result = await sql<Lead[]>`
+    SELECT * FROM leads
+    WHERE whatsapp_number = ${whatsappNumber}
+    AND status != 'booked'
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+  return result[0];
 }
 
 /**
@@ -60,33 +58,29 @@ export async function createLead(
   contactName: string | null,
   rawEnquiryText: string
 ): Promise<Lead> {
-  const db = await getDb();
   const id = randomUUID();
   const now = new Date().toISOString();
 
-  db.run(
-    `INSERT INTO leads (
+  const result = await sql<Lead[]>`
+    INSERT INTO leads (
       id, whatsapp_number, contact_name, status, raw_enquiry_text, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [id, whatsappNumber, contactName, "new", rawEnquiryText, now, now]
-  );
+    ) VALUES (
+      ${id}, ${whatsappNumber}, ${contactName}, 'new', ${rawEnquiryText}, ${now}, ${now}
+    )
+    RETURNING *
+  `;
 
-  saveDatabase();
-  return (await findLeadById(id))!;
+  return result[0];
 }
 
 /**
  * Find lead by ID
  */
 export async function findLeadById(id: string): Promise<Lead | undefined> {
-  const db = await getDb();
-  const result = db.exec("SELECT * FROM leads WHERE id = ?", [id]);
-
-  if (result.length === 0 || result[0].values.length === 0) {
-    return undefined;
-  }
-
-  return rowToLead(result[0].columns, result[0].values[0]);
+  const result = await sql<Lead[]>`
+    SELECT * FROM leads WHERE id = ${id}
+  `;
+  return result[0];
 }
 
 /**
@@ -107,54 +101,41 @@ export async function updateLeadQualification(
   aiProviderUsed: string,
   aiWasFailover: boolean
 ): Promise<void> {
-  const db = await getDb();
-
-  db.run(
-    `UPDATE leads SET
-      move_type = ?,
-      origin = ?,
-      destination = ?,
-      urgency = ?,
-      has_special_items = ?,
-      special_items = ?,
-      estimated_volume = ?,
-      requires_packing = ?,
-      ai_provider_used = ?,
-      ai_was_failover = ?,
+  await sql`
+    UPDATE leads SET
+      move_type = ${qualificationData.moveType},
+      origin = ${qualificationData.origin},
+      destination = ${qualificationData.destination},
+      urgency = ${qualificationData.urgency},
+      has_special_items = ${qualificationData.hasSpecialItems},
+      special_items = ${
+        qualificationData.specialItems
+          ? JSON.stringify(qualificationData.specialItems)
+          : null
+      },
+      estimated_volume = ${qualificationData.estimatedVolume},
+      requires_packing = ${qualificationData.requiresPacking},
+      ai_provider_used = ${aiProviderUsed},
+      ai_was_failover = ${aiWasFailover},
       status = 'qualified',
-      updated_at = ?
-    WHERE id = ?`,
-    [
-      qualificationData.moveType,
-      qualificationData.origin,
-      qualificationData.destination,
-      qualificationData.urgency,
-      qualificationData.hasSpecialItems ? 1 : 0,
-      qualificationData.specialItems
-        ? JSON.stringify(qualificationData.specialItems)
-        : null,
-      qualificationData.estimatedVolume,
-      qualificationData.requiresPacking ? 1 : 0,
-      aiProviderUsed,
-      aiWasFailover ? 1 : 0,
-      new Date().toISOString(),
-      leadId,
-    ]
-  );
-
-  saveDatabase();
+      updated_at = ${new Date().toISOString()}
+    WHERE id = ${leadId}
+  `;
 }
 
 /**
  * Update lead status
  */
-export async function updateLeadStatus(leadId: string, status: LeadStatus): Promise<void> {
-  const db = await getDb();
-  db.run(
-    "UPDATE leads SET status = ?, updated_at = ? WHERE id = ?",
-    [status, new Date().toISOString(), leadId]
-  );
-  saveDatabase();
+export async function updateLeadStatus(
+  leadId: string,
+  status: LeadStatus
+): Promise<void> {
+  await sql`
+    UPDATE leads SET
+      status = ${status},
+      updated_at = ${new Date().toISOString()}
+    WHERE id = ${leadId}
+  `;
 }
 
 /**
@@ -164,32 +145,28 @@ export async function createBookingOffer(
   leadId: string,
   slotOptions: SlotOption[]
 ): Promise<BookingOffer> {
-  const db = await getDb();
   const id = randomUUID();
   const now = new Date().toISOString();
 
-  db.run(
-    `INSERT INTO booking_offers (id, lead_id, slot_options, offered_at)
-    VALUES (?, ?, ?, ?)`,
-    [id, leadId, JSON.stringify(slotOptions), now]
-  );
+  const result = await sql<BookingOffer[]>`
+    INSERT INTO booking_offers (id, lead_id, slot_options, offered_at)
+    VALUES (${id}, ${leadId}, ${JSON.stringify(slotOptions)}, ${now})
+    RETURNING *
+  `;
 
-  saveDatabase();
-  return (await findBookingOfferById(id))!;
+  return result[0];
 }
 
 /**
  * Find booking offer by ID
  */
-export async function findBookingOfferById(id: string): Promise<BookingOffer | undefined> {
-  const db = await getDb();
-  const result = db.exec("SELECT * FROM booking_offers WHERE id = ?", [id]);
-
-  if (result.length === 0 || result[0].values.length === 0) {
-    return undefined;
-  }
-
-  return rowToBookingOffer(result[0].columns, result[0].values[0]);
+export async function findBookingOfferById(
+  id: string
+): Promise<BookingOffer | undefined> {
+  const result = await sql<BookingOffer[]>`
+    SELECT * FROM booking_offers WHERE id = ${id}
+  `;
+  return result[0];
 }
 
 /**
@@ -198,17 +175,14 @@ export async function findBookingOfferById(id: string): Promise<BookingOffer | u
 export async function findOpenBookingOffer(
   leadId: string
 ): Promise<BookingOffer | undefined> {
-  const db = await getDb();
-  const result = db.exec(
-    "SELECT * FROM booking_offers WHERE lead_id = ? AND selected_slot IS NULL ORDER BY offered_at DESC LIMIT 1",
-    [leadId]
-  );
-
-  if (result.length === 0 || result[0].values.length === 0) {
-    return undefined;
-  }
-
-  return rowToBookingOffer(result[0].columns, result[0].values[0]);
+  const result = await sql<BookingOffer[]>`
+    SELECT * FROM booking_offers
+    WHERE lead_id = ${leadId}
+    AND selected_slot IS NULL
+    ORDER BY offered_at DESC
+    LIMIT 1
+  `;
+  return result[0];
 }
 
 /**
@@ -218,32 +192,10 @@ export async function recordSlotSelection(
   offerId: string,
   selectedSlot: string
 ): Promise<void> {
-  const db = await getDb();
-  db.run(
-    "UPDATE booking_offers SET selected_slot = ?, responded_at = ? WHERE id = ?",
-    [selectedSlot, new Date().toISOString(), offerId]
-  );
-  saveDatabase();
-}
-
-/**
- * Helper: Convert sql.js row to Lead object
- */
-function rowToLead(columns: string[], values: any[]): Lead {
-  const obj: any = {};
-  columns.forEach((col, idx) => {
-    obj[col] = values[idx];
-  });
-  return obj as Lead;
-}
-
-/**
- * Helper: Convert sql.js row to BookingOffer object
- */
-function rowToBookingOffer(columns: string[], values: any[]): BookingOffer {
-  const obj: any = {};
-  columns.forEach((col, idx) => {
-    obj[col] = values[idx];
-  });
-  return obj as BookingOffer;
+  await sql`
+    UPDATE booking_offers SET
+      selected_slot = ${selectedSlot},
+      responded_at = ${new Date().toISOString()}
+    WHERE id = ${offerId}
+  `;
 }

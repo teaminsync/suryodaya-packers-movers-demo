@@ -6,9 +6,13 @@ import "dotenv/config";
 import express from "express";
 import { verifyWebhook, handleWebhook } from "./whatsapp/webhook.js";
 import { aiRouter } from "./ai/router.js";
+import { initializeDatabase } from "./leads/db.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Initialize database
+await initializeDatabase();
 
 // Initialize AI router
 await aiRouter.initialize();

@@ -4,12 +4,21 @@ Provider-agnostic AI layer with automatic failover for a moving company automati
 
 ## Architecture
 
-This project implements a **provider-agnostic AI layer** that automatically switches between Claude (Anthropic) and Gemini (Google) based on available API keys:
+This project implements a **provider-agnostic AI layer** that automatically switches between Claude (Anthropic) and Gemini (Google) based on available API keys, backed by **Supabase Postgres** for persistent data storage:
 
+### AI Layer
 - **DEMO mode**: Gemini primary, no fallback (no Anthropic key required)
 - **PRODUCTION mode**: Claude primary, Gemini fallback (Anthropic key validated at startup)
 
 The system uses TypeScript for strong typing across provider adapters, ensuring consistent request/response shapes and catching schema drift at compile time.
+
+### Data Layer
+- **Supabase Postgres** via direct connection (postgres.js)
+- Self-initializing schema (runs on startup, no manual SQL required)
+- Real BOOLEAN and TIMESTAMPTZ types for production-grade data integrity
+- Connection pooling via postgres.js (max 10 connections, configurable timeouts)
+
+**Connection troubleshooting**: Supabase's Direct connection defaults to IPv6. If the server hangs on startup with database connection errors, switch to the **Session pooler** connection string (IPv4-compatible) - same database, different endpoint format. No code changes needed, just update `DATABASE_URL` in `.env`.
 
 ## Setup
 
@@ -51,6 +60,15 @@ AI_FORCE_PROVIDER=gemini
 
 **Note**: Only `gemini` is supported - used to avoid Claude API costs during development when a valid Anthropic key exists. Leave blank for automatic mode detection.
 
+#### Database (required):
+```
+DATABASE_URL=postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres
+```
+
+Get this from your Supabase project dashboard → Settings → Database → Connection string (Direct connection format).
+
+**Important**: Use the **Direct connection** string by default. If you experience connection hangs or timeouts (likely an IPv6 issue), switch to the **Session pooler** connection string instead.
+
 **Model strings verified from official docs:**
 - Claude: `claude-sonnet-5` from [platform.claude.com/docs](https://platform.claude.com/docs/en/about-claude/models/overview)
 - Gemini: `gemini-3.6-flash` from [ai.google.dev/gemini-api/docs](https://ai.google.dev/gemini-api/docs/latest-model)
@@ -69,6 +87,8 @@ npm start
 ```
 
 ## Testing
+
+**Current status**: `ANTHROPIC_API_KEY` is present but deliberately unbilled (billing deferred until a paying client is confirmed). Tests 6.2 (live-claude-fallback) and 6.3 (forced-failover) will show DEMO mode / validation failure, which is expected behavior, not a regression. Test 6.1 (live-gemini) remains the primary validation test.
 
 ### Unit Tests (mocked providers)
 ```bash
@@ -113,6 +133,22 @@ src/
 │       ├── live-gemini.test.ts     # REAL: Section 6.1
 │       ├── live-claude-fallback.test.ts  # REAL: Section 6.2
 │       └── forced-failover.test.ts # REAL: Section 6.3
+├── leads/
+│   ├── db.ts                       # Postgres connection & schema init
+│   ├── repository.ts               # Data access layer (CRUD)
+│   └── types.ts                    # Lead, BookingOffer, ProcessedMessage types
+├── flows/
+│   ├── qualification.ts            # AI-powered lead qualification
+│   ├── acknowledgment.ts           # Instant ack with trust signals
+│   └── booking.ts                  # Slot generation & selection
+├── whatsapp/
+│   ├── client.ts                   # WhatsApp Cloud API client
+│   ├── webhook.ts                  # Webhook handlers & orchestration
+│   └── types.ts                    # WhatsApp payload types
+├── company/
+│   └── profile.ts                  # Company facts & ballpark pricing
+├── server.ts                       # Express server
+├── query-lead.ts                   # Dev utility for inspecting leads
 └── index.ts                        # Application entry point
 ```
 
@@ -187,14 +223,19 @@ Failures include `errorReason` field for debugging.
 
 ## Next Steps
 
-This module is **foundation code** - the following features will be built on top of it in subsequent specs:
+This module provides **production-grade foundation code** with:
+- ✅ Provider-agnostic AI layer with automatic failover
+- ✅ WhatsApp Cloud API integration (bidirectional messaging)
+- ✅ Supabase Postgres persistence with transactional guarantees
+- ✅ Lead qualification and instant acknowledgment
+- ✅ Booking slot management
+- ✅ Message deduplication (idempotency)
 
-- WhatsApp Cloud API integration (Section 7)
-- Lead qualification logic
-- Urgency scoring
+Future enhancements may include:
 - Volumetric estimation from images
-- Quote drafting
-- Follow-up message generation
+- E-way bill and GST documentation generation
+- Post-move review automation
+- Real-time ops dashboard via Supabase Realtime
 
 ## License
 

@@ -1,38 +1,29 @@
 /**
- * SQLite connection and schema initialization using sql.js (pure JS, no native deps)
+ * Supabase Postgres connection and schema initialization
  */
 
-import initSqlJs, { Database as SqlJsDatabase } from "sql.js";
-import path from "path";
-import { fileURLToPath } from "url";
-import fs from "fs";
+import postgres from "postgres";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const DATABASE_URL = process.env.DATABASE_URL;
 
-// Database file in project root
-const DB_PATH = path.join(__dirname, "..", "..", "suryodaya.db");
+if (!DATABASE_URL) {
+  throw new Error(
+    "[Database] DATABASE_URL environment variable is required"
+  );
+}
 
-let dbInstance: SqlJsDatabase | null = null;
+// Create Postgres client
+export const sql = postgres(DATABASE_URL, {
+  max: 10, // Connection pool size
+  idle_timeout: 20,
+  connect_timeout: 10,
+});
 
 /**
- * Initialize sql.js and load/create database
+ * Initialize schema (idempotent - safe to run on every startup)
  */
-async function initDatabase(): Promise<SqlJsDatabase> {
-  const SQL = await initSqlJs();
-
-  // Load existing database or create new one
-  if (fs.existsSync(DB_PATH)) {
-    const buffer = fs.readFileSync(DB_PATH);
-    dbInstance = new SQL.Database(buffer);
-    console.log(`[Database] Loaded existing database from ${DB_PATH}`);
-  } else {
-    dbInstance = new SQL.Database();
-    console.log(`[Database] Created new database at ${DB_PATH}`);
-  }
-
-  // Initialize schema
-  dbInstance.exec(`
+async function initSchema(): Promise<void> {
+  await sql`
     CREATE TABLE IF NOT EXISTS leads (
       id TEXT PRIMARY KEY,
       whatsapp_number TEXT NOT NULL,
@@ -42,76 +33,78 @@ async function initDatabase(): Promise<SqlJsDatabase> {
       origin TEXT,
       destination TEXT,
       urgency TEXT,
-      has_special_items INTEGER DEFAULT 0,
+      has_special_items BOOLEAN NOT NULL DEFAULT FALSE,
       special_items TEXT,
       estimated_volume TEXT,
-      requires_packing INTEGER DEFAULT 0,
+      requires_packing BOOLEAN NOT NULL DEFAULT FALSE,
       ai_provider_used TEXT,
-      ai_was_failover INTEGER DEFAULT 0,
+      ai_was_failover BOOLEAN NOT NULL DEFAULT FALSE,
       raw_enquiry_text TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
+    )
+  `;
 
+  await sql`
     CREATE TABLE IF NOT EXISTS processed_messages (
       wamid TEXT PRIMARY KEY,
       lead_id TEXT REFERENCES leads(id),
-      processed_at TEXT NOT NULL
-    );
+      processed_at TIMESTAMPTZ NOT NULL
+    )
+  `;
 
+  await sql`
     CREATE TABLE IF NOT EXISTS booking_offers (
       id TEXT PRIMARY KEY,
       lead_id TEXT NOT NULL REFERENCES leads(id),
       slot_options TEXT NOT NULL,
       selected_slot TEXT,
-      offered_at TEXT NOT NULL,
-      responded_at TEXT
+      offered_at TIMESTAMPTZ NOT NULL,
+      responded_at TIMESTAMPTZ
+    )
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_leads_whatsapp_number ON leads(whatsapp_number)
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status)
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_booking_offers_lead_id ON booking_offers(lead_id)
+  `;
+
+  console.log("[Database] Schema initialized");
+}
+
+/**
+ * Test database connectivity
+ */
+async function testConnection(): Promise<void> {
+  try {
+    await sql`SELECT 1`;
+    console.log("[Database] Connected to Supabase Postgres");
+  } catch (error) {
+    console.error(
+      "[Database] Failed to connect to Supabase Postgres:",
+      error
     );
-
-    CREATE INDEX IF NOT EXISTS idx_leads_whatsapp_number ON leads(whatsapp_number);
-    CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
-    CREATE INDEX IF NOT EXISTS idx_booking_offers_lead_id ON booking_offers(lead_id);
-  `);
-
-  console.log(`[Database] Schema initialized`);
-
-  // Save to disk immediately
-  saveDatabase();
-
-  return dbInstance;
-}
-
-/**
- * Save database to disk
- */
-export function saveDatabase(): void {
-  if (dbInstance) {
-    const data = dbInstance.export();
-    fs.writeFileSync(DB_PATH, data);
+    console.error(
+      "[Database] If connection hangs or times out, this is likely an IPv6 issue."
+    );
+    console.error(
+      "[Database] Solution: Use the Session pooler connection string (IPv4-compatible) instead of the Direct connection."
+    );
+    throw error;
   }
 }
 
 /**
- * Get database instance (lazy initialization)
+ * Initialize database on module load
  */
-let dbPromise: Promise<SqlJsDatabase> | null = null;
-
-export async function getDb(): Promise<SqlJsDatabase> {
-  if (dbInstance) {
-    return dbInstance;
-  }
-
-  if (!dbPromise) {
-    dbPromise = initDatabase();
-  }
-
-  return dbPromise;
-}
-
-// Synchronous wrapper for compatibility (throws if not initialized)
-export function getDbSync(): SqlJsDatabase {
-  if (!dbInstance) {
-    throw new Error("Database not initialized. Call getDb() first.");
-  }
-  return dbInstance;
+export async function initializeDatabase(): Promise<void> {
+  await testConnection();
+  await initSchema();
 }
