@@ -64,6 +64,34 @@ export class GeminiAdapter implements AIProviderAdapter {
     }
   }
 
+  /**
+   * Recursively strip JSON Schema fields that Gemini rejects.
+   * Gemini supports: type, properties, items, required, enum
+   * Gemini rejects: $schema, definitions, additionalProperties
+   * 
+   * Must be recursive because nested objects (e.g., properties within properties)
+   * can also contain these forbidden fields at any depth.
+   */
+  private stripGeminiIncompatibleFields(schema: any): any {
+    if (schema === null || typeof schema !== "object") {
+      return schema;
+    }
+
+    if (Array.isArray(schema)) {
+      return schema.map((item) => this.stripGeminiIncompatibleFields(item));
+    }
+
+    // Clone and strip forbidden keys at this level
+    const { $schema, definitions, additionalProperties, ...cleaned } = schema;
+
+    // Recursively clean nested objects
+    for (const key of Object.keys(cleaned)) {
+      cleaned[key] = this.stripGeminiIncompatibleFields(cleaned[key]);
+    }
+
+    return cleaned;
+  }
+
   async call<TSchema extends z.ZodTypeAny>(
     request: AIRequest<TSchema>
   ): Promise<{
@@ -81,12 +109,10 @@ export class GeminiAdapter implements AIProviderAdapter {
       $refStrategy: "none",
     }) as Record<string, unknown>;
 
-    // Remove JSON Schema fields that Gemini doesn't accept
-    // Gemini supports: type, properties, items, required, enum
-    // Gemini rejects: $schema, definitions, additionalProperties
-    const { $schema, definitions, additionalProperties, ...jsonSchema } = rawSchema;
+    // Recursively remove all JSON Schema fields that Gemini doesn't accept
+    const jsonSchema = this.stripGeminiIncompatibleFields(rawSchema);
     
-    // LOG: What's actually being sent to Gemini?
+    // LOG: What's actually being sent to Gemini? (one-time evidence for nested strip fix)
     console.debug("[Gemini] Schema sent to API:", JSON.stringify(jsonSchema, null, 2));
 
     // Build user content parts: text + images

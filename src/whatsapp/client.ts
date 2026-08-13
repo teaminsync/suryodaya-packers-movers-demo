@@ -78,6 +78,78 @@ export class WhatsAppClient {
       throw error;
     }
   }
+
+  /**
+   * Send an interactive list message via WhatsApp Cloud API
+   * Allows users to select from a menu of options
+   */
+  async sendListMessage(
+    to: string,
+    bodyText: string,
+    buttonLabel: string,
+    options: Array<{ id: string; title: string; description?: string }>
+  ): Promise<WhatsAppSendMessageResponse> {
+    const url = `${GRAPH_API_BASE}/${this.apiVersion}/${this.phoneNumberId}/messages`;
+
+    const payload = {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to,
+      type: "interactive",
+      interactive: {
+        type: "list",
+        body: {
+          text: bodyText,
+        },
+        action: {
+          button: buttonLabel,
+          sections: [
+            {
+              title: "Options",
+              rows: options.map(opt => ({
+                id: opt.id,
+                title: opt.title,
+                description: opt.description || "",
+              })),
+            },
+          ],
+        },
+      },
+    };
+
+    console.log("[WhatsApp Client] Outbound list message:", {
+      url,
+      to,
+      buttonLabel,
+      optionCount: options.length,
+    });
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = (await response.json()) as WhatsAppSendMessageResponse | { error: unknown };
+
+      console.log("[WhatsApp Client] Raw response:", JSON.stringify(data, null, 2));
+
+      if (!response.ok) {
+        throw new Error(
+          `WhatsApp API error: ${response.status} - ${JSON.stringify(data)}`
+        );
+      }
+
+      return data as WhatsAppSendMessageResponse;
+    } catch (error) {
+      console.error("[WhatsApp Client] Send failed:", error);
+      throw error;
+    }
+  }
 }
 
 // Export singleton instance

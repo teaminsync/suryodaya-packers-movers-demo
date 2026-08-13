@@ -76,6 +76,15 @@ async function initSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_booking_offers_lead_id ON booking_offers(lead_id)
   `;
 
+  // Add escalation columns (idempotent)
+  await sql`
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS escalated BOOLEAN NOT NULL DEFAULT FALSE
+  `;
+
+  await sql`
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMPTZ
+  `;
+
   console.log("[Database] Schema initialized");
 }
 

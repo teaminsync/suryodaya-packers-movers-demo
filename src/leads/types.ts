@@ -4,8 +4,7 @@
 
 export type LeadStatus =
   | "new"
-  | "qualified"
-  | "ack_sent"
+  | "gathering"
   | "booking_offered"
   | "booked";
 
@@ -24,6 +23,8 @@ export interface Lead {
   requires_packing: boolean;
   ai_provider_used: string | null; // 'claude' | 'gemini'
   ai_was_failover: boolean;
+  escalated: boolean;
+  escalated_at: string | null;
   raw_enquiry_text: string | null;
   created_at: string;
   updated_at: string;

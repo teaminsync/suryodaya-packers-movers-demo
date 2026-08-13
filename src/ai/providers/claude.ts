@@ -69,6 +69,33 @@ export class ClaudeAdapter implements AIProviderAdapter {
     }
   }
 
+  /**
+   * Recursively strip JSON Schema fields that Claude doesn't need or may reject.
+   * Strips: $schema, definitions, additionalProperties
+   * 
+   * Must be recursive because nested objects (e.g., properties within properties)
+   * can also contain these fields at any depth.
+   */
+  private stripClaudeIncompatibleFields(schema: any): any {
+    if (schema === null || typeof schema !== "object") {
+      return schema;
+    }
+
+    if (Array.isArray(schema)) {
+      return schema.map((item) => this.stripClaudeIncompatibleFields(item));
+    }
+
+    // Clone and strip unnecessary keys at this level
+    const { $schema, definitions, additionalProperties, ...cleaned } = schema;
+
+    // Recursively clean nested objects
+    for (const key of Object.keys(cleaned)) {
+      cleaned[key] = this.stripClaudeIncompatibleFields(cleaned[key]);
+    }
+
+    return cleaned;
+  }
+
   async call<TSchema extends z.ZodTypeAny>(
     request: AIRequest<TSchema>
   ): Promise<{
@@ -86,9 +113,8 @@ export class ClaudeAdapter implements AIProviderAdapter {
       $refStrategy: "none",
     }) as Record<string, unknown>;
 
-    // Remove top-level JSON Schema meta-fields
-    // Keep the actual schema content (type, properties, etc.)
-    const { $schema, definitions, ...jsonSchema } = rawSchema;
+    // Recursively remove JSON Schema meta-fields that may cause issues
+    const jsonSchema = this.stripClaudeIncompatibleFields(rawSchema);
 
     // Build user message content with text + images
     const userContent: ClaudeMessage["content"] = [];

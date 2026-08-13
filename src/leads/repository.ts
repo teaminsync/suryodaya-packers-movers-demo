@@ -84,49 +84,99 @@ export async function findLeadById(id: string): Promise<Lead | undefined> {
 }
 
 /**
- * Update lead with qualification data
+ * Merge lead fields incrementally - only updates provided fields
  */
-export async function updateLeadQualification(
+export async function mergeLeadFields(
   leadId: string,
-  qualificationData: {
+  fields: Partial<{
     moveType: string;
     origin: string;
     destination: string;
     urgency: string;
     hasSpecialItems: boolean;
-    specialItems?: string[];
+    specialItems: string[];
     estimatedVolume: string;
     requiresPacking: boolean;
-  },
-  aiProviderUsed: string,
-  aiWasFailover: boolean
+  }>,
+  aiProviderUsed?: string,
+  aiWasFailover?: boolean
 ): Promise<void> {
+  // Skip if no fields to update
+  if (Object.keys(fields).length === 0 && !aiProviderUsed) {
+    return;
+  }
+
+  const updates: any[] = [new Date().toISOString()]; // updated_at is always first
+  const setClauses: string[] = ["updated_at = $1"];
+  let paramIndex = 2;
+
+  if (fields.moveType !== undefined) {
+    setClauses.push(`move_type = $${paramIndex++}`);
+    updates.push(fields.moveType);
+  }
+  if (fields.origin !== undefined) {
+    setClauses.push(`origin = $${paramIndex++}`);
+    updates.push(fields.origin);
+  }
+  if (fields.destination !== undefined) {
+    setClauses.push(`destination = $${paramIndex++}`);
+    updates.push(fields.destination);
+  }
+  if (fields.urgency !== undefined) {
+    setClauses.push(`urgency = $${paramIndex++}`);
+    updates.push(fields.urgency);
+  }
+  if (fields.hasSpecialItems !== undefined) {
+    setClauses.push(`has_special_items = $${paramIndex++}`);
+    updates.push(fields.hasSpecialItems);
+  }
+  if (fields.specialItems !== undefined) {
+    setClauses.push(`special_items = $${paramIndex++}`);
+    updates.push(JSON.stringify(fields.specialItems));
+  }
+  if (fields.estimatedVolume !== undefined) {
+    setClauses.push(`estimated_volume = $${paramIndex++}`);
+    updates.push(fields.estimatedVolume);
+  }
+  if (fields.requiresPacking !== undefined) {
+    setClauses.push(`requires_packing = $${paramIndex++}`);
+    updates.push(fields.requiresPacking);
+  }
+  if (aiProviderUsed !== undefined) {
+    setClauses.push(`ai_provider_used = $${paramIndex++}`);
+    updates.push(aiProviderUsed);
+  }
+  if (aiWasFailover !== undefined) {
+    setClauses.push(`ai_was_failover = $${paramIndex++}`);
+    updates.push(aiWasFailover);
+  }
+
+  updates.push(leadId);
+
+  await sql.unsafe(`
+    UPDATE leads 
+    SET ${setClauses.join(', ')}
+    WHERE id = $${paramIndex}
+  `, updates);
+}
+
+/**
+ * Set lead escalation status
+ */
+export async function setLeadEscalated(leadId: string): Promise<void> {
   await sql`
     UPDATE leads SET
-      move_type = ${qualificationData.moveType},
-      origin = ${qualificationData.origin},
-      destination = ${qualificationData.destination},
-      urgency = ${qualificationData.urgency},
-      has_special_items = ${qualificationData.hasSpecialItems},
-      special_items = ${
-        qualificationData.specialItems
-          ? JSON.stringify(qualificationData.specialItems)
-          : null
-      },
-      estimated_volume = ${qualificationData.estimatedVolume},
-      requires_packing = ${qualificationData.requiresPacking},
-      ai_provider_used = ${aiProviderUsed},
-      ai_was_failover = ${aiWasFailover},
-      status = 'qualified',
+      escalated = TRUE,
+      escalated_at = ${new Date().toISOString()},
       updated_at = ${new Date().toISOString()}
     WHERE id = ${leadId}
   `;
 }
 
 /**
- * Update lead status
+ * Update lead status explicitly
  */
-export async function updateLeadStatus(
+export async function setLeadStatus(
   leadId: string,
   status: LeadStatus
 ): Promise<void> {
