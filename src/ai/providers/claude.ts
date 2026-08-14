@@ -103,6 +103,14 @@ export class ClaudeAdapter implements AIProviderAdapter {
     modelUsed: string;
     usage?: Record<string, number>;
   }> {
+    // Fast-reject video requests before any other processing
+    if (request.video) {
+      throw new AIProviderError(
+        `Claude does not support video input. This request ("${request.taskName}") requires video understanding, which only Gemini currently provides. This is an expected, permanent limitation, not a transient failure.`,
+        "claude"
+      );
+    }
+
     const startTime = Date.now();
     const hasImages = request.images && request.images.length > 0;
     const timeout = hasImages ? DEFAULT_TIMEOUT_VISION_MS : DEFAULT_TIMEOUT_TEXT_MS;

@@ -26,3 +26,12 @@ Thumbs.db
 
 # Test coverage
 coverage/
+# Local test media for manual AI-layer testing (see test-volumetric.ts usage)
+# Scoped by extension only, not by the "test-" prefix alone, so this never
+# accidentally ignores real test scripts like test-volumetric.ts or
+# test-claude-video-reject.ts, which ARE meant to be committed.
+test-*.png
+test-*.jpg
+test-*.jpeg
+test-*.webp
+test-*.mp4
