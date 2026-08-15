@@ -65,6 +65,27 @@ async function initSchema(): Promise<void> {
   `;
 
   await sql`
+    CREATE TABLE IF NOT EXISTS media_captures (
+      id TEXT PRIMARY KEY,
+      lead_id TEXT NOT NULL REFERENCES leads(id),
+      wamid TEXT NOT NULL,
+      media_type TEXT NOT NULL,
+      storage_path TEXT,
+      asset_type TEXT,
+      suggested_room_label TEXT,
+      items TEXT,
+      total_estimated_cubic_feet REAL,
+      total_estimated_weight_kg REAL,
+      packing_complexity TEXT,
+      special_handling_notes TEXT,
+      confidence TEXT,
+      ai_provider_used TEXT,
+      ai_was_failover BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL
+    )
+  `;
+
+  await sql`
     CREATE INDEX IF NOT EXISTS idx_leads_whatsapp_number ON leads(whatsapp_number)
   `;
 
@@ -74,6 +95,10 @@ async function initSchema(): Promise<void> {
 
   await sql`
     CREATE INDEX IF NOT EXISTS idx_booking_offers_lead_id ON booking_offers(lead_id)
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_media_captures_lead_id ON media_captures(lead_id)
   `;
 
   // Add escalation columns (idempotent)

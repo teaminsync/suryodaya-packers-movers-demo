@@ -207,7 +207,136 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
             }
           }
 
-          // Step 5: Free text - process conversation turn with unified AI call
+          // Step 5: Handle media (image/video) messages
+          if (message.type === "image" || message.type === "video") {
+            try {
+              const mediaInfo = message.image || message.video;
+              if (!mediaInfo) {
+                console.warn("[Webhook] Media message but no media info found");
+                continue;
+              }
+
+              const mediaType = message.type as "image" | "video";
+              const mediaId = mediaInfo.id;
+              const mimeType = mediaInfo.mime_type;
+
+              console.log(`[Webhook] Processing ${mediaType} message:`, { mediaId, mimeType });
+
+              // Download media from WhatsApp
+              const { downloadWhatsAppMedia } = await import("./media.js");
+              const { buffer, mimeType: downloadedMimeType } = await downloadWhatsAppMedia(mediaId);
+
+              // Upload to Supabase Storage (non-blocking - can fail gracefully)
+              const { uploadToStorage } = await import("../storage/supabaseStorage.js");
+              const fileExtension = downloadedMimeType.split("/")[1] || (mediaType === "image" ? "jpg" : "mp4");
+              const objectPath = `${lead.id}/${wamid}.${fileExtension}`;
+              const uploadResult = await uploadToStorage(objectPath, buffer, downloadedMimeType);
+
+              // Analyze media with AI
+              const { analyzeMediaCapture } = await import("../flows/volumetric.js");
+              const base64Data = buffer.toString("base64");
+              
+              let analysisResult;
+              if (mediaType === "image") {
+                // Image needs specific MIME type validation
+                const validImageMimes = ["image/jpeg", "image/png", "image/webp"] as const;
+                
+                if (!validImageMimes.includes(downloadedMimeType as any)) {
+                  console.warn(
+                    `[Webhook] Unexpected image mime type "${downloadedMimeType}" - defaulting to image/jpeg for AI analysis. This may produce incorrect results if the actual format differs.`
+                  );
+                }
+                
+                const imageMimeType = validImageMimes.includes(downloadedMimeType as any) 
+                  ? (downloadedMimeType as "image/jpeg" | "image/png" | "image/webp")
+                  : "image/jpeg"; // Default fallback
+                
+                analysisResult = await analyzeMediaCapture({
+                  type: "image",
+                  mimeType: imageMimeType,
+                  base64Data,
+                });
+              } else {
+                // Video doesn't need mimeType parameter
+                analysisResult = await analyzeMediaCapture({
+                  type: "video",
+                  base64Data,
+                });
+              }
+
+              console.log("[Webhook] Media analysis complete:", {
+                assetType: analysisResult.data.assetType,
+                suggestedRoomLabel: analysisResult.data.suggestedRoomLabel,
+                itemCount: analysisResult.data.items.length,
+                totalCubicFeet: analysisResult.data.totalEstimatedCubicFeet,
+                provider: analysisResult.providerUsed,
+                failover: analysisResult.wasFailover,
+              });
+
+              // Save to database
+              const { createMediaCapture } = await import("../leads/repository.js");
+              await createMediaCapture({
+                leadId: lead.id,
+                wamid,
+                mediaType,
+                storagePath: uploadResult?.path || null,
+                assetType: analysisResult.data.assetType,
+                suggestedRoomLabel: analysisResult.data.suggestedRoomLabel,
+                items: analysisResult.data.items,
+                totalEstimatedCubicFeet: analysisResult.data.totalEstimatedCubicFeet,
+                totalEstimatedWeightKg: analysisResult.data.totalEstimatedWeightKg,
+                packingComplexity: analysisResult.data.packingComplexity,
+                specialHandlingNotes: analysisResult.data.specialHandlingNotes,
+                confidence: analysisResult.data.confidence,
+                aiProviderUsed: analysisResult.providerUsed,
+                aiWasFailover: analysisResult.wasFailover,
+              });
+
+              // Build reply message
+              const roomLabel = analysisResult.data.suggestedRoomLabel || "this room";
+              const itemList = analysisResult.data.items
+                .slice(0, 5)
+                .map((item) => `• ${item.name} (${item.quantity})`)
+                .join("\n");
+              const moreItems = analysisResult.data.items.length > 5 
+                ? `\n...and ${analysisResult.data.items.length - 5} more items` 
+                : "";
+
+              const replyMessage = `Got it! For your ${roomLabel}, I can see:\n\n${itemList}${moreItems}\n\nEstimated ~${analysisResult.data.totalEstimatedCubicFeet.toFixed(1)} cu ft, ~${analysisResult.data.totalEstimatedWeightKg.toFixed(1)} kg.\n\nSend another room's photo or video anytime, or let me know when you're done and we'll add this to your move total.`;
+
+              await whatsappClient.sendMessage(whatsappNumber, replyMessage);
+
+              // Update lead status if needed
+              if (lead.status === "new") {
+                await setLeadStatus(lead.id, "gathering");
+              }
+
+              // Send quick-reply options (media capture always counts as substantive)
+              await whatsappClient.sendListMessage(
+                whatsappNumber,
+                "How can I help you next?",
+                "Quick Options",
+                [
+                  { id: "get_estimate", title: "Get Quick Estimate", description: "Ballpark pricing" },
+                  { id: "book_survey", title: "Book a Survey", description: "Schedule site visit" },
+                  { id: "talk_human", title: "Talk to a Human", description: "Speak with team" },
+                  { id: "update_details", title: "Update My Details", description: "Change information" },
+                ]
+              );
+
+              console.log("[Webhook] Media processing complete for:", wamid);
+
+            } catch (error) {
+              console.error("[Webhook] Media processing failed:", error);
+              await whatsappClient.sendMessage(
+                whatsappNumber,
+                "Sorry, I had trouble processing that - could you try sending it again?"
+              );
+            }
+            continue;
+          }
+
+          // Step 6: Free text - process conversation turn with unified AI call
           if (message.type === "text" && message.text?.body) {
             const messageText = message.text.body;
 

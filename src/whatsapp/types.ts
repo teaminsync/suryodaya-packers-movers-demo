@@ -38,6 +38,20 @@ export interface WhatsAppWebhookPayload {
               title: string;
             };
           };
+          image?: {
+            id: string;
+            mime_type: string;
+            sha256: string;
+            url: string;
+            caption?: string;
+          };
+          video?: {
+            id: string;
+            mime_type: string;
+            sha256: string;
+            url: string;
+            caption?: string;
+          };
           type: string;
         }>;
         statuses?: Array<{

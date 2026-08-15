@@ -249,3 +249,42 @@ export async function recordSlotSelection(
     WHERE id = ${offerId}
   `;
 }
+
+/**
+ * Create a media capture record
+ */
+export async function createMediaCapture(params: {
+  leadId: string;
+  wamid: string;
+  mediaType: "image" | "video";
+  storagePath: string | null;
+  assetType: string;
+  suggestedRoomLabel: string | null;
+  items: unknown[];
+  totalEstimatedCubicFeet: number;
+  totalEstimatedWeightKg: number;
+  packingComplexity: string;
+  specialHandlingNotes: string[];
+  confidence: string;
+  aiProviderUsed: string;
+  aiWasFailover: boolean;
+}): Promise<void> {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+
+  await sql`
+    INSERT INTO media_captures (
+      id, lead_id, wamid, media_type, storage_path,
+      asset_type, suggested_room_label, items,
+      total_estimated_cubic_feet, total_estimated_weight_kg,
+      packing_complexity, special_handling_notes, confidence,
+      ai_provider_used, ai_was_failover, created_at
+    ) VALUES (
+      ${id}, ${params.leadId}, ${params.wamid}, ${params.mediaType}, ${params.storagePath},
+      ${params.assetType}, ${params.suggestedRoomLabel}, ${JSON.stringify(params.items)},
+      ${params.totalEstimatedCubicFeet}, ${params.totalEstimatedWeightKg},
+      ${params.packingComplexity}, ${JSON.stringify(params.specialHandlingNotes)}, ${params.confidence},
+      ${params.aiProviderUsed}, ${params.aiWasFailover}, ${now}
+    )
+  `;
+}
