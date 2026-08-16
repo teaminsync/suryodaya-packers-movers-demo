@@ -288,3 +288,33 @@ export async function createMediaCapture(params: {
     )
   `;
 }
+
+/**
+ * Row interface for media capture aggregation
+ */
+export interface MediaCaptureRow {
+  id: string;
+  media_type: string;
+  suggested_room_label: string | null;
+  items: string; // JSON text, parse with JSON.parse
+  total_estimated_cubic_feet: number;
+  total_estimated_weight_kg: number;
+  confidence: string;
+}
+
+/**
+ * Get all media captures for a lead
+ */
+export async function getMediaCapturesForLead(
+  leadId: string
+): Promise<MediaCaptureRow[]> {
+  const result = await sql<MediaCaptureRow[]>`
+    SELECT 
+      id, media_type, suggested_room_label, items,
+      total_estimated_cubic_feet, total_estimated_weight_kg, confidence
+    FROM media_captures
+    WHERE lead_id = ${leadId}
+    ORDER BY created_at ASC
+  `;
+  return result;
+}

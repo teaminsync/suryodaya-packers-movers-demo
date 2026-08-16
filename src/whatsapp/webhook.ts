@@ -4,6 +4,7 @@
 
 import { Request, Response } from "express";
 import { WhatsAppWebhookPayload } from "./types.js";
+import { formatRoomLabel } from "../utils/text.js";
 
 /**
  * GET /webhook - Meta verification handshake
@@ -183,6 +184,23 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
               );
               continue;
             }
+
+            if (interactionId === "get_move_total") {
+              const { generateMoveQuote } = await import("../flows/quote.js");
+              const quote = await generateMoveQuote(lead.id);
+              
+              await whatsappClient.sendMessage(whatsappNumber, quote.message);
+              
+              console.log("[Webhook] Move total sent:", {
+                leadId: lead.id,
+                hasCaptures: quote.hasCaptures,
+                roomCount: quote.roomCount,
+                captureCount: quote.captureCount,
+                totalCubicFeet: quote.totalEstimatedCubicFeet,
+                totalWeightKg: quote.totalEstimatedWeightKg,
+              });
+              continue;
+            }
           }
 
           // Step 4: Check if they're responding to a booking offer with a slot selection
@@ -293,7 +311,9 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
               });
 
               // Build reply message
-              const roomLabel = analysisResult.data.suggestedRoomLabel || "this room";
+              const roomLabel = analysisResult.data.suggestedRoomLabel
+                ? formatRoomLabel(analysisResult.data.suggestedRoomLabel)
+                : "this room";
               const itemList = analysisResult.data.items
                 .slice(0, 5)
                 .map((item) => `• ${item.name} (${item.quantity})`)
@@ -321,6 +341,7 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
                   { id: "book_survey", title: "Book a Survey", description: "Schedule site visit" },
                   { id: "talk_human", title: "Talk to a Human", description: "Speak with team" },
                   { id: "update_details", title: "Update My Details", description: "Change information" },
+                  { id: "get_move_total", title: "Get My Move Total", description: "Full estimate from all rooms" },
                 ]
               );
 
@@ -428,6 +449,7 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
                   { id: "book_survey", title: "Book a Survey", description: "Schedule site visit" },
                   { id: "talk_human", title: "Talk to a Human", description: "Speak with team" },
                   { id: "update_details", title: "Update My Details", description: "Change information" },
+                  { id: "get_move_total", title: "Get My Move Total", description: "Full estimate from all rooms" },
                 ]
               );
             }
