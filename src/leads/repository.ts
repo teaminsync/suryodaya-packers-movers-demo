@@ -268,7 +268,7 @@ export async function createMediaCapture(params: {
   confidence: string;
   aiProviderUsed: string;
   aiWasFailover: boolean;
-}): Promise<void> {
+}): Promise<string> {
   const id = randomUUID();
   const now = new Date().toISOString();
 
@@ -287,6 +287,8 @@ export async function createMediaCapture(params: {
       ${params.aiProviderUsed}, ${params.aiWasFailover}, ${now}
     )
   `;
+  
+  return id;
 }
 
 /**
@@ -317,4 +319,68 @@ export async function getMediaCapturesForLead(
     ORDER BY created_at ASC
   `;
   return result;
+}
+
+/**
+ * Message history row interface
+ */
+export interface MessageRow {
+  id: string;
+  lead_id: string;
+  wamid: string | null;
+  direction: "inbound" | "outbound";
+  sender_type: "customer" | "ai" | "system" | "human";
+  message_type: "text" | "image" | "video" | "interactive" | "list";
+  body: string | null;
+  media_capture_id: string | null;
+  created_at: string;
+}
+
+/**
+ * Create a message record
+ */
+export async function createMessage(params: {
+  leadId: string;
+  wamid: string | null;
+  direction: "inbound" | "outbound";
+  senderType: "customer" | "ai" | "system" | "human";
+  messageType: "text" | "image" | "video" | "interactive" | "list";
+  body: string | null;
+  mediaCaptureId?: string | null;
+}): Promise<void> {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+
+  await sql`
+    INSERT INTO messages (
+      id, lead_id, wamid, direction, sender_type, message_type, body,
+      media_capture_id, created_at
+    ) VALUES (
+      ${id}, ${params.leadId}, ${params.wamid}, ${params.direction},
+      ${params.senderType}, ${params.messageType}, ${params.body},
+      ${params.mediaCaptureId || null}, ${now}
+    )
+  `;
+}
+
+/**
+ * Get all messages for a lead
+ */
+export async function getMessagesForLead(leadId: string): Promise<MessageRow[]> {
+  const result = await sql<MessageRow[]>`
+    SELECT * FROM messages WHERE lead_id = ${leadId} ORDER BY created_at ASC
+  `;
+  return result;
+}
+
+/**
+ * Set human takeover flag for a lead
+ */
+export async function setHumanTakeover(leadId: string, enabled: boolean): Promise<void> {
+  await sql`
+    UPDATE leads SET 
+      human_takeover = ${enabled}, 
+      updated_at = ${new Date().toISOString()}
+    WHERE id = ${leadId}
+  `;
 }

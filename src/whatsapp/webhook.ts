@@ -62,7 +62,7 @@ export function handleWebhook(req: Request, res: Response): void {
  */
 async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
   // Lazy imports to avoid circular dependency issues
-  const { isMessageProcessed, markMessageProcessed, findActiveLead, createLead, mergeLeadFields, setLeadStatus, setLeadEscalated, findOpenBookingOffer, createBookingOffer, recordSlotSelection } = await import("../leads/repository.js");
+  const { isMessageProcessed, markMessageProcessed, findActiveLead, createLead, mergeLeadFields, setLeadStatus, setLeadEscalated, findOpenBookingOffer, createBookingOffer, recordSlotSelection, createMessage } = await import("../leads/repository.js");
   const { processConversationTurn } = await import("../flows/qualification.js");
   const { generateSlotOptions, parseSlotSelection, generateConfirmationMessage } = await import("../flows/booking.js");
   const { getBallparkRange } = await import("../company/profile.js");
@@ -127,12 +127,31 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
             
             console.log("[Webhook] Interactive button tapped:", interactionId);
 
+            // Log inbound interactive message
+            await createMessage({
+              leadId: lead.id,
+              wamid,
+              direction: "inbound",
+              senderType: "customer",
+              messageType: "interactive",
+              body: interactionId || null,
+            });
+
             if (interactionId === "talk_human") {
               await setLeadEscalated(lead.id);
-              await whatsappClient.sendMessage(
-                whatsappNumber,
-                "Thank you! A team member from Suryodaya will reach out to you shortly."
-              );
+              const ackMessage = "Thank you! A team member from Suryodaya will reach out to you shortly.";
+              await whatsappClient.sendMessage(whatsappNumber, ackMessage);
+              
+              // Log outbound escalation ack
+              await createMessage({
+                leadId: lead.id,
+                wamid: null,
+                direction: "outbound",
+                senderType: "system",
+                messageType: "text",
+                body: ackMessage,
+              });
+              
               console.log("[Webhook] Escalated lead:", lead.id);
               continue;
             }
@@ -142,6 +161,17 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
               const slotMessage = `Great! Here are available survey times:\n\n${slots.map((s, i) => `${i + 1}. ${s.label}`).join("\n")}\n\nReply with the number of your preferred time.`;
               
               await whatsappClient.sendMessage(whatsappNumber, slotMessage);
+              
+              // Log outbound booking slots message
+              await createMessage({
+                leadId: lead.id,
+                wamid: null,
+                direction: "outbound",
+                senderType: "system",
+                messageType: "text",
+                body: slotMessage,
+              });
+              
               await createBookingOffer(lead.id, slots);
               await setLeadStatus(lead.id, "booking_offered");
               console.log("[Webhook] Booking slots offered");
@@ -163,25 +193,52 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
                 message += `, the ballpark range is ${ballpark}.\n\nThis is approximate - an on-site survey gives us the real quote. Tap "Book a Survey" when ready!`;
                 
                 await whatsappClient.sendMessage(whatsappNumber, message);
+                
+                // Log outbound ballpark estimate
+                await createMessage({
+                  leadId: lead.id,
+                  wamid: null,
+                  direction: "outbound",
+                  senderType: "system",
+                  messageType: "text",
+                  body: message,
+                });
               } else {
                 // Not enough info - only ask for what's actually needed
                 const missing: string[] = [];
                 if (!lead.move_type) missing.push("move type (local/intercity)");
                 if (!lead.estimated_volume) missing.push("home/office size (1bhk/2bhk/etc)");
 
-                await whatsappClient.sendMessage(
-                  whatsappNumber,
-                  `To give you an estimate, I need: ${missing.join(", ")}. Can you share those details?`
-                );
+                const message = `To give you an estimate, I need: ${missing.join(", ")}. Can you share those details?`;
+                await whatsappClient.sendMessage(whatsappNumber, message);
+                
+                // Log outbound prompt
+                await createMessage({
+                  leadId: lead.id,
+                  wamid: null,
+                  direction: "outbound",
+                  senderType: "system",
+                  messageType: "text",
+                  body: message,
+                });
               }
               continue;
             }
 
             if (interactionId === "update_details") {
-              await whatsappClient.sendMessage(
-                whatsappNumber,
-                "Sure — what would you like to update?"
-              );
+              const message = "Sure — what would you like to update?";
+              await whatsappClient.sendMessage(whatsappNumber, message);
+              
+              // Log outbound update prompt
+              await createMessage({
+                leadId: lead.id,
+                wamid: null,
+                direction: "outbound",
+                senderType: "system",
+                messageType: "text",
+                body: message,
+              });
+              
               continue;
             }
 
@@ -190,6 +247,16 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
               const quote = await generateMoveQuote(lead.id);
               
               await whatsappClient.sendMessage(whatsappNumber, quote.message);
+              
+              // Log outbound quote message
+              await createMessage({
+                leadId: lead.id,
+                wamid: null,
+                direction: "outbound",
+                senderType: "system",
+                messageType: "text",
+                body: quote.message,
+              });
               
               console.log("[Webhook] Move total sent:", {
                 leadId: lead.id,
@@ -205,6 +272,16 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
 
           // Step 4: Check if they're responding to a booking offer with a slot selection
           if (lead.status === "booking_offered" && message.type === "text" && message.text?.body) {
+            // Log inbound text message
+            await createMessage({
+              leadId: lead.id,
+              wamid,
+              direction: "inbound",
+              senderType: "customer",
+              messageType: "text",
+              body: message.text.body,
+            });
+            
             const openOffer = await findOpenBookingOffer(lead.id);
             if (openOffer) {
               const slots = JSON.parse(openOffer.slot_options);
@@ -218,6 +295,16 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
 
                 const confirmMessage = await generateConfirmationMessage(selectedSlot);
                 await whatsappClient.sendMessage(whatsappNumber, confirmMessage);
+
+                // Log outbound booking confirmation
+                await createMessage({
+                  leadId: lead.id,
+                  wamid: null,
+                  direction: "outbound",
+                  senderType: "system",
+                  messageType: "text",
+                  body: confirmMessage,
+                });
 
                 console.log("[Webhook] Booking confirmed for lead:", lead.id);
                 continue;
@@ -237,8 +324,19 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
               const mediaType = message.type as "image" | "video";
               const mediaId = mediaInfo.id;
               const mimeType = mediaInfo.mime_type;
+              const caption = mediaInfo.caption || null;
 
               console.log(`[Webhook] Processing ${mediaType} message:`, { mediaId, mimeType });
+
+              // Log inbound media message
+              await createMessage({
+                leadId: lead.id,
+                wamid,
+                direction: "inbound",
+                senderType: "customer",
+                messageType: mediaType,
+                body: caption,
+              });
 
               // Download media from WhatsApp
               const { downloadWhatsAppMedia } = await import("./media.js");
@@ -291,9 +389,9 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
                 failover: analysisResult.wasFailover,
               });
 
-              // Save to database
+              // Save to database and get the capture ID
               const { createMediaCapture } = await import("../leads/repository.js");
-              await createMediaCapture({
+              const mediaCaptureId = await createMediaCapture({
                 leadId: lead.id,
                 wamid,
                 mediaType,
@@ -326,6 +424,17 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
 
               await whatsappClient.sendMessage(whatsappNumber, replyMessage);
 
+              // Log outbound media-capture reply with linkage
+              await createMessage({
+                leadId: lead.id,
+                wamid: null,
+                direction: "outbound",
+                senderType: "system",
+                messageType: "text",
+                body: replyMessage,
+                mediaCaptureId,
+              });
+
               // Update lead status if needed
               if (lead.status === "new") {
                 await setLeadStatus(lead.id, "gathering");
@@ -345,14 +454,32 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
                 ]
               );
 
+              // Log outbound Quick Options list
+              await createMessage({
+                leadId: lead.id,
+                wamid: null,
+                direction: "outbound",
+                senderType: "system",
+                messageType: "list",
+                body: "Quick Options menu",
+              });
+
               console.log("[Webhook] Media processing complete for:", wamid);
 
             } catch (error) {
               console.error("[Webhook] Media processing failed:", error);
-              await whatsappClient.sendMessage(
-                whatsappNumber,
-                "Sorry, I had trouble processing that - could you try sending it again?"
-              );
+              const errorMessage = "Sorry, I had trouble processing that - could you try sending it again?";
+              await whatsappClient.sendMessage(whatsappNumber, errorMessage);
+              
+              // Log outbound error message
+              await createMessage({
+                leadId: lead.id,
+                wamid: null,
+                direction: "outbound",
+                senderType: "system",
+                messageType: "text",
+                body: errorMessage,
+              });
             }
             continue;
           }
@@ -362,6 +489,22 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
             const messageText = message.text.body;
 
             console.log("[Webhook] Processing conversation turn for lead:", lead.id);
+
+            // Log inbound text message
+            await createMessage({
+              leadId: lead.id,
+              wamid,
+              direction: "inbound",
+              senderType: "customer",
+              messageType: "text",
+              body: messageText,
+            });
+
+            // Check for human takeover flag - skip AI if enabled
+            if (lead.human_takeover) {
+              console.log("[Webhook] Human takeover active for lead, skipping AI response:", lead.id);
+              continue;
+            }
 
             // Build known context from lead
             const knownInfo: any = {};
@@ -417,12 +560,33 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
             // Send reply message
             await whatsappClient.sendMessage(whatsappNumber, turnResult.data.replyMessage);
 
+            // Log outbound AI reply
+            await createMessage({
+              leadId: lead.id,
+              wamid: null,
+              direction: "outbound",
+              senderType: "ai",
+              messageType: "text",
+              body: turnResult.data.replyMessage,
+            });
+
             // Handle wants-to-book trigger
             if (turnResult.data.wantsToBookSurvey && lead.status !== "booking_offered" && lead.status !== "booked") {
               const slots = generateSlotOptions();
               const slotMessage = `Great! Here are available survey times:\n\n${slots.map((s, i) => `${i + 1}. ${s.label}`).join("\n")}\n\nReply with the number of your preferred time.`;
               
               await whatsappClient.sendMessage(whatsappNumber, slotMessage);
+              
+              // Log outbound booking slots (AI-triggered)
+              await createMessage({
+                leadId: lead.id,
+                wamid: null,
+                direction: "outbound",
+                senderType: "system",
+                messageType: "text",
+                body: slotMessage,
+              });
+              
               await createBookingOffer(lead.id, slots);
               await setLeadStatus(lead.id, "booking_offered");
               console.log("[Webhook] Booking slots offered (AI detected intent)");
@@ -431,10 +595,19 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
             // Handle escalation request
             if (turnResult.data.wantsHuman) {
               await setLeadEscalated(lead.id);
-              await whatsappClient.sendMessage(
-                whatsappNumber,
-                "A team member from Suryodaya will reach out to you shortly."
-              );
+              const escalationMessage = "A team member from Suryodaya will reach out to you shortly.";
+              await whatsappClient.sendMessage(whatsappNumber, escalationMessage);
+              
+              // Log outbound escalation ack
+              await createMessage({
+                leadId: lead.id,
+                wamid: null,
+                direction: "outbound",
+                senderType: "system",
+                messageType: "text",
+                body: escalationMessage,
+              });
+              
               console.log("[Webhook] Escalated via free text");
             }
 
@@ -452,6 +625,16 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
                   { id: "get_move_total", title: "Get My Move Total", description: "Full estimate from all rooms" },
                 ]
               );
+              
+              // Log outbound Quick Options list
+              await createMessage({
+                leadId: lead.id,
+                wamid: null,
+                direction: "outbound",
+                senderType: "system",
+                messageType: "list",
+                body: "Quick Options menu",
+              });
             }
           }
 

@@ -110,6 +110,33 @@ async function initSchema(): Promise<void> {
     ALTER TABLE leads ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMPTZ
   `;
 
+  // Add messages table and human takeover column
+  await sql`
+    CREATE TABLE IF NOT EXISTS messages (
+      id TEXT PRIMARY KEY,
+      lead_id TEXT NOT NULL REFERENCES leads(id),
+      wamid TEXT,
+      direction TEXT NOT NULL,
+      sender_type TEXT NOT NULL,
+      message_type TEXT NOT NULL,
+      body TEXT,
+      media_capture_id TEXT REFERENCES media_captures(id),
+      created_at TIMESTAMPTZ NOT NULL
+    )
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_messages_lead_id ON messages(lead_id)
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at)
+  `;
+
+  await sql`
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS human_takeover BOOLEAN NOT NULL DEFAULT FALSE
+  `;
+
   console.log("[Database] Schema initialized");
 }
 

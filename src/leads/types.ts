@@ -25,6 +25,7 @@ export interface Lead {
   ai_was_failover: boolean;
   escalated: boolean;
   escalated_at: string | null;
+  human_takeover: boolean;
   raw_enquiry_text: string | null;
   created_at: string;
   updated_at: string;
