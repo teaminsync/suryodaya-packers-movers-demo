@@ -40,7 +40,7 @@ export function generateSlotOptions(): SlotOption[] {
     const afternoon = new Date(date);
     afternoon.setHours(14, 0, 0, 0);
     slots.push({
-      label: `${date.toLocaleDateString("en-IN", { weekday: "short", month: "numeric", day: "numeric" })} at 2:00 PM`,
+      label: `${date.toLocaleDateString("en-IN", { weekday: "short", month: "short", day: "numeric" })} at 2:00 PM`,
       datetime: afternoon.toISOString(),
     });
 
@@ -117,34 +117,8 @@ export function parseSlotSelection(
 }
 
 /**
- * Generate booking confirmation message
+ * Build booking confirmation message
  */
-export async function generateConfirmationMessage(
-  selectedSlot: SlotOption
-): Promise<string> {
-  const confirmSchema = z.object({
-    message: z.string(),
-  });
-
-  const request: AIRequest<typeof confirmSchema> = {
-    systemPrompt: `You are a scheduling assistant for ${COMPANY_PROFILE.name}.
-
-Generate a brief confirmation message for a booked survey slot.
-The message should:
-1. Confirm the booked time
-2. Mention what to expect (surveyor will arrive, 15-30 min inspection)
-3. Provide a warm, professional closing
-
-Keep it short and reassuring.`,
-    userPrompt: `Generate a confirmation for this booked slot:
-
-${selectedSlot.label}
-
-Just the message body.`,
-    responseSchema: confirmSchema,
-    taskName: "booking_confirmation",
-  };
-
-  const response = await aiRouter.call(request);
-  return response.data.message;
+export function buildConfirmationMessage(selectedSlot: SlotOption): string {
+  return `✅ You're booked! Your survey is confirmed for ${selectedSlot.label}.\n\nOur surveyor will visit and spend about 15-30 minutes confirming your exact, itemized quote. If you need to change the time, just message us here.\n\n- ${COMPANY_PROFILE.name}`;
 }

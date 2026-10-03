@@ -64,7 +64,7 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
   // Lazy imports to avoid circular dependency issues
   const { isMessageProcessed, markMessageProcessed, findActiveLead, createLead, mergeLeadFields, setLeadStatus, setLeadEscalated, findOpenBookingOffer, createBookingOffer, recordSlotSelection, createMessage } = await import("../leads/repository.js");
   const { processConversationTurn } = await import("../flows/qualification.js");
-  const { generateSlotOptions, parseSlotSelection, generateConfirmationMessage } = await import("../flows/booking.js");
+  const { generateSlotOptions, parseSlotSelection, buildConfirmationMessage } = await import("../flows/booking.js");
   const { getBallparkRange } = await import("../company/profile.js");
   const { whatsappClient } = await import("./client.js");
 
@@ -292,11 +292,10 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
               if (selectedSlot) {
                 console.log("[Webhook] Slot selected:", selectedSlot.label);
                 
+                const confirmMessage = buildConfirmationMessage(selectedSlot);
+                await whatsappClient.sendMessage(whatsappNumber, confirmMessage);
                 await recordSlotSelection(openOffer.id, selectedSlot.label);
                 await setLeadStatus(lead.id, "booked");
-
-                const confirmMessage = await generateConfirmationMessage(selectedSlot);
-                await whatsappClient.sendMessage(whatsappNumber, confirmMessage);
 
                 // Log outbound booking confirmation
                 await createMessage({
@@ -510,7 +509,23 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
             if (lead.requires_packing !== null) knownInfo.requiresPacking = lead.requires_packing;
 
             // Single AI call for the turn
-            const turnResult = await processConversationTurn(messageText, knownInfo);
+            let turnResult;
+            try {
+              turnResult = await processConversationTurn(messageText, knownInfo);
+            } catch (error) {
+              console.error("[Webhook] AI turn failed, sending fallback:", error);
+              const fallbackMessage = "Sorry, I hit a temporary technical issue and couldn't process that. Please send it again in a minute.";
+              await whatsappClient.sendMessage(whatsappNumber, fallbackMessage);
+              await createMessage({
+                leadId: lead.id,
+                wamid: null,
+                direction: "outbound",
+                senderType: "system",
+                messageType: "text",
+                body: fallbackMessage,
+              });
+              continue;
+            }
 
             console.log("[Webhook] Turn result:", {
               extractedFields: turnResult.data.extractedFields,
