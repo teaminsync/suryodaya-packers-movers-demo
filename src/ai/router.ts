@@ -1,11 +1,12 @@
 import { z } from "zod";
-import { AIRequest, AIResponse } from "./types.js";
+import { AIRequest, AIResponse, ProviderName } from "./types.js";
 import { AIProviderAdapter } from "./providers/provider.interface.js";
 import { ClaudeAdapter } from "./providers/claude.js";
 import { GeminiAdapter } from "./providers/gemini.js";
 import {
   AISchemaValidationError,
   AIAllProvidersFailed,
+  AINoCapableProviderError,
 } from "./errors.js";
 
 type AIMode = "PRODUCTION" | "DEMO";
@@ -13,7 +14,7 @@ type AIMode = "PRODUCTION" | "DEMO";
 interface RouterConfig {
   mode: AIMode;
   primary: AIProviderAdapter;
-  fallback?: AIProviderAdapter;
+  fallbacks: AIProviderAdapter[];
 }
 
 /**
@@ -52,6 +53,7 @@ export class AIRouter {
       this.config = {
         mode: "DEMO",
         primary: new GeminiAdapter(),
+        fallbacks: [],
       };
       console.info("🔧 AI mode: FORCED DEMO (Gemini primary, no fallback)");
       this.initialized = true;
@@ -86,7 +88,7 @@ export class AIRouter {
           this.config = {
             mode: "PRODUCTION",
             primary: claudeAdapter,
-            fallback: new GeminiAdapter(),
+            fallbacks: [new GeminiAdapter()],
           };
           console.info(
             "🚀 AI mode: PRODUCTION (Anthropic key validated, Claude primary / Gemini fallback)"
@@ -110,6 +112,7 @@ export class AIRouter {
     this.config = {
       mode: "DEMO",
       primary: new GeminiAdapter(),
+      fallbacks: [],
     };
     console.info(
       "🎮 AI mode: DEMO (no valid Anthropic key found, Gemini primary, no fallback configured)"
@@ -130,116 +133,113 @@ export class AIRouter {
     }
 
     const startTime = Date.now();
-    const { mode, primary, fallback } = this.config;
+    const { mode, primary, fallbacks } = this.config;
 
-    // Try primary provider
-    try {
-      const result = await this.executeProvider(primary, request);
-      const latencyMs = Date.now() - startTime;
+    // Build provider chain
+    const chain = [primary, ...fallbacks];
 
-      this.logCallResult({
-        taskName: request.taskName,
-        mode,
-        providerUsed: primary.name,
-        wasFailover: false,
-        latencyMs,
-        success: true,
-      });
+    // Determine required capabilities
+    const required = {
+      images: (request.images?.length ?? 0) > 0,
+      video: !!request.video,
+    };
 
-      return {
-        data: result.validated,
-        providerUsed: primary.name,
-        modelUsed: result.modelUsed,
-        wasFailover: false,
-        latencyMs,
-        rawUsage: result.usage,
-      };
-    } catch (primaryError) {
-      const primaryErrorMessage =
-        primaryError instanceof Error ? primaryError.message : String(primaryError);
+    // Filter to eligible providers
+    const eligible = chain.filter((provider) => {
+      if (required.images && !provider.capabilities.images) return false;
+      if (required.video && !provider.capabilities.video) return false;
+      return true;
+    });
 
-      console.warn(
-        `[AI Router] Primary provider (${primary.name}) failed for task "${request.taskName}":`,
-        primaryErrorMessage
-      );
+    // Log skipped providers
+    for (const provider of chain) {
+      if (!eligible.includes(provider)) {
+        const lacking: string[] = [];
+        if (required.images && !provider.capabilities.images) lacking.push("images");
+        if (required.video && !provider.capabilities.video) lacking.push("video");
+        console.info(
+          `[AI Router] Skipping ${provider.name} for task "${request.taskName}": lacks ${lacking.join(", ")} support`
+        );
+      }
+    }
 
-      // In demo mode, no fallback available
-      if (!fallback) {
-        const latencyMs = Date.now() - startTime;
-        this.logCallResult({
-          taskName: request.taskName,
-          mode,
-          providerUsed: primary.name,
-          wasFailover: false,
-          latencyMs,
-          success: false,
-          errorReason: primaryErrorMessage,
-        });
-        throw primaryError;
+    // Check if any provider is eligible
+    if (eligible.length === 0) {
+      const needs: string[] = [];
+      if (required.images) needs.push("images");
+      if (required.video) needs.push("video");
+      throw new AINoCapableProviderError(needs);
+    }
+
+    // Try each eligible provider in order
+    const failures: Array<{ provider: ProviderName; error: Error }> = [];
+
+    for (let i = 0; i < eligible.length; i++) {
+      const provider = eligible[i];
+      const isFirst = i === 0;
+
+      if (!isFirst) {
+        console.info(
+          `[AI Router] Attempting fallback to ${provider.name} for task "${request.taskName}"`
+        );
       }
 
-      // Production mode: try fallback
-      console.info(
-        `[AI Router] Attempting fallback to ${fallback.name} for task "${request.taskName}"`
-      );
-
       try {
-        const result = await this.executeProvider(fallback, request);
+        const result = await this.executeProvider(provider, request);
         const latencyMs = Date.now() - startTime;
+        const wasFailover = provider !== primary;
 
         this.logCallResult({
           taskName: request.taskName,
           mode,
-          providerUsed: fallback.name,
-          wasFailover: true,
+          providerUsed: provider.name,
+          wasFailover,
           latencyMs,
           success: true,
         });
 
         return {
           data: result.validated,
-          providerUsed: fallback.name,
+          providerUsed: provider.name,
           modelUsed: result.modelUsed,
-          wasFailover: true,
+          wasFailover,
           latencyMs,
           rawUsage: result.usage,
         };
-      } catch (fallbackError) {
-        const fallbackErrorMessage =
-          fallbackError instanceof Error
-            ? fallbackError.message
-            : String(fallbackError);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
 
-        const latencyMs = Date.now() - startTime;
-        this.logCallResult({
-          taskName: request.taskName,
-          mode,
-          providerUsed: fallback.name,
-          wasFailover: true,
-          latencyMs,
-          success: false,
-          errorReason: fallbackErrorMessage,
+        const label = provider === primary ? "Primary provider" : "Fallback provider";
+        console.warn(`[AI Router] ${label} (${provider.name}) failed for task "${request.taskName}":`, errorMessage);
+
+        failures.push({
+          provider: provider.name,
+          error: error instanceof Error ? error : new Error(String(error)),
         });
-
-        // Both failed
-        throw new AIAllProvidersFailed([
-          {
-            provider: primary.name,
-            error:
-              primaryError instanceof Error
-                ? primaryError
-                : new Error(String(primaryError)),
-          },
-          {
-            provider: fallback.name,
-            error:
-              fallbackError instanceof Error
-                ? fallbackError
-                : new Error(String(fallbackError)),
-          },
-        ]);
       }
     }
+
+    // All eligible providers failed
+    const latencyMs = Date.now() - startTime;
+
+    this.logCallResult({
+      taskName: request.taskName,
+      mode,
+      providerUsed: failures[failures.length - 1].provider,
+      wasFailover: failures[failures.length - 1].provider !== primary.name,
+      latencyMs,
+      success: false,
+      errorReason: failures[failures.length - 1].error.message,
+    });
+
+    // If only one provider was attempted, rethrow its error
+    if (failures.length === 1) {
+      throw failures[0].error;
+    }
+
+    // Multiple providers failed
+    throw new AIAllProvidersFailed(failures);
   }
 
   private async executeProvider<TSchema extends z.ZodTypeAny>(
@@ -279,7 +279,7 @@ export class AIRouter {
   private logCallResult(log: {
     taskName: string;
     mode: AIMode;
-    providerUsed: "claude" | "gemini";
+    providerUsed: ProviderName;
     wasFailover: boolean;
     latencyMs: number;
     success: boolean;

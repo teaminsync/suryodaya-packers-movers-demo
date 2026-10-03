@@ -50,7 +50,7 @@ export async function processConversationTurn(
   knownLeadInfo: Partial<LeadInfo>
 ): Promise<{
   data: TurnResponse;
-  providerUsed: "claude" | "gemini";
+  providerUsed: import("../ai/types.js").ProviderName;
   wasFailover: boolean;
 }> {
   // Build context summary from known info

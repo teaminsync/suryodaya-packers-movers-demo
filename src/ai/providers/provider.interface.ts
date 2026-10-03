@@ -1,8 +1,12 @@
 import { z } from "zod";
-import { AIRequest } from "../types.js";
+import { AIRequest, ProviderName } from "../types.js";
 
 export interface AIProviderAdapter {
-  readonly name: "claude" | "gemini";
+  readonly name: ProviderName;
+  readonly capabilities: {
+    readonly images: boolean;
+    readonly video: boolean;
+  };
 
   /**
    * Execute an AI request against this provider.

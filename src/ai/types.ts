@@ -1,6 +1,11 @@
 import { z } from "zod";
 
 /**
+ * Provider names - extensible to support new providers
+ */
+export type ProviderName = "claude" | "gemini" | "groq";
+
+/**
  * A single image input, provider-agnostic
  */
 export interface AIImageInput {
@@ -34,7 +39,7 @@ export interface AIRequest<TSchema extends z.ZodTypeAny> {
  */
 export interface AIResponse<T> {
   data: T; // parsed + validated against responseSchema
-  providerUsed: "claude" | "gemini";
+  providerUsed: ProviderName;
   modelUsed: string;
   wasFailover: boolean; // true if primary failed and fallback served this
   latencyMs: number;

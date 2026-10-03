@@ -65,6 +65,10 @@ interface GeminiFileUploadResponse {
 
 export class GeminiAdapter implements AIProviderAdapter {
   readonly name = "gemini" as const;
+  readonly capabilities = {
+    images: true,
+    video: true,
+  } as const;
 
   private readonly apiKey: string;
   private readonly model: string;

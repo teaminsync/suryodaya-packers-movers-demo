@@ -1,10 +1,12 @@
+import { ProviderName } from "./types.js";
+
 /**
  * Base error for all AI provider-related failures
  */
 export class AIProviderError extends Error {
   constructor(
     message: string,
-    public readonly provider: "claude" | "gemini",
+    public readonly provider: ProviderName,
     public readonly statusCode?: number,
     public readonly originalError?: unknown
   ) {
@@ -20,7 +22,7 @@ export class AIProviderError extends Error {
 export class AISchemaValidationError extends Error {
   constructor(
     message: string,
-    public readonly provider: "claude" | "gemini",
+    public readonly provider: ProviderName,
     public readonly validationErrors: unknown,
     public readonly rawResponse: unknown
   ) {
@@ -36,7 +38,7 @@ export class AISchemaValidationError extends Error {
 export class AIAllProvidersFailed extends Error {
   constructor(
     public readonly failures: Array<{
-      provider: "claude" | "gemini";
+      provider: ProviderName;
       error: Error;
     }>
   ) {
@@ -46,5 +48,17 @@ export class AIAllProvidersFailed extends Error {
     super(`All AI providers failed: ${summary}`);
     this.name = "AIAllProvidersFailed";
     Object.setPrototypeOf(this, AIAllProvidersFailed.prototype);
+  }
+}
+
+/**
+ * Thrown when no provider in the chain has the required capabilities
+ */
+export class AINoCapableProviderError extends Error {
+  constructor(public readonly needs: string[]) {
+    const needsList = needs.join(", ");
+    super(`No provider in the chain supports the required capabilities: ${needsList}`);
+    this.name = "AINoCapableProviderError";
+    Object.setPrototypeOf(this, AINoCapableProviderError.prototype);
   }
 }

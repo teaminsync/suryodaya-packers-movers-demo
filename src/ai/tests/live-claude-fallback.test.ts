@@ -33,7 +33,7 @@ describeIfLive("Live Claude Tests (PRODUCTION mode)", () => {
     console.log("\n=== ROUTER CONFIG ===");
     console.log("Mode:", config?.mode);
     console.log("Primary:", config?.primary.name);
-    console.log("Fallback:", config?.fallback?.name || "none");
+    console.log("Fallback:", config?.fallbacks.map((f) => f.name).join(", ") || "none");
     console.log("====================\n");
 
     if (config?.mode !== "PRODUCTION") {

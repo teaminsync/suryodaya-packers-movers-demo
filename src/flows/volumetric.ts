@@ -43,7 +43,7 @@ export async function analyzeMediaCapture(
     | { type: "video"; base64Data: string }
 ): Promise<{
   data: VolumetricEstimate;
-  providerUsed: "claude" | "gemini";
+  providerUsed: import("../ai/types.js").ProviderName;
   wasFailover: boolean;
 }> {
   const systemPrompt = `You are a professional volumetric estimation assistant for ${COMPANY_PROFILE.name}, a ${COMPANY_PROFILE.gstDisplayText} packers and movers company based in ${COMPANY_PROFILE.city}.

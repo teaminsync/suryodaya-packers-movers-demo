@@ -56,6 +56,10 @@ interface ClaudeResponse {
 
 export class ClaudeAdapter implements AIProviderAdapter {
   readonly name = "claude" as const;
+  readonly capabilities = {
+    images: true,
+    video: false,
+  } as const;
 
   private readonly apiKey: string;
   private readonly model: string;
