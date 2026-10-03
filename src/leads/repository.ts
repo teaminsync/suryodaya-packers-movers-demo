@@ -360,6 +360,7 @@ export async function createMessage(params: {
       ${params.senderType}, ${params.messageType}, ${params.body},
       ${params.mediaCaptureId || null}, ${now}
     )
+    ON CONFLICT DO NOTHING
   `;
 }
 

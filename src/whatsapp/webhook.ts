@@ -121,6 +121,18 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
             console.log("[Webhook] Found existing lead:", lead.id, "status:", lead.status);
           }
 
+          // Log inbound text messages up front (single place)
+          if (message.type === "text" && message.text?.body) {
+            await createMessage({
+              leadId: lead.id,
+              wamid,
+              direction: "inbound",
+              senderType: "customer",
+              messageType: "text",
+              body: message.text.body,
+            });
+          }
+
           // Step 3: Handle interactive button taps (deterministic routing)
           if (message.type === "interactive") {
             const interactionId = message.interactive?.list_reply?.id || message.interactive?.button_reply?.id;
@@ -272,16 +284,6 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
 
           // Step 4: Check if they're responding to a booking offer with a slot selection
           if (lead.status === "booking_offered" && message.type === "text" && message.text?.body) {
-            // Log inbound text message
-            await createMessage({
-              leadId: lead.id,
-              wamid,
-              direction: "inbound",
-              senderType: "customer",
-              messageType: "text",
-              body: message.text.body,
-            });
-            
             const openOffer = await findOpenBookingOffer(lead.id);
             if (openOffer) {
               const slots = JSON.parse(openOffer.slot_options);
@@ -489,16 +491,6 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
             const messageText = message.text.body;
 
             console.log("[Webhook] Processing conversation turn for lead:", lead.id);
-
-            // Log inbound text message
-            await createMessage({
-              leadId: lead.id,
-              wamid,
-              direction: "inbound",
-              senderType: "customer",
-              messageType: "text",
-              body: messageText,
-            });
 
             // Check for human takeover flag - skip AI if enabled
             if (lead.human_takeover) {

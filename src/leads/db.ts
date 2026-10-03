@@ -134,6 +134,11 @@ async function initSchema(): Promise<void> {
   `;
 
   await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_wamid_unique
+    ON messages(wamid) WHERE wamid IS NOT NULL
+  `;
+
+  await sql`
     ALTER TABLE leads ADD COLUMN IF NOT EXISTS human_takeover BOOLEAN NOT NULL DEFAULT FALSE
   `;
 
