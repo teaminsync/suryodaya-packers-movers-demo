@@ -62,3 +62,44 @@ export function getBallparkRange(
   const volumeRanges = BALLPARK_RANGES[estimatedVolume] || BALLPARK_RANGES.unknown;
   return volumeRanges[moveType] || volumeRanges.local;
 }
+
+export const COMPANY_SERVICES = {
+  offered: [
+    "Local moves within Pune",
+    "Intercity moves on our corridors (Pune, Mumbai, Bengaluru, Hyderabad, Delhi NCR)",
+    "Packing and unpacking",
+    "Loading and unloading",
+    "Extra-care handling for fragile items and pianos, planned and confirmed at the on-site survey",
+  ],
+  notOffered: [
+    "Storage or warehousing",
+    "Vehicle (car or bike) transport",
+    "International moves",
+  ],
+} as const;
+
+export function buildCompanyFactsBlock(): string {
+  const corridors = COMPANY_PROFILE.serviceCorridors.join(", ");
+  
+  const offeredBullets = COMPANY_SERVICES.offered
+    .map((service) => `- ${service}`)
+    .join("\n");
+  
+  const notOfferedBullets = COMPANY_SERVICES.notOffered
+    .map((service) => `- ${service}`)
+    .join("\n");
+
+  return `WHAT YOU MAY STATE ABOUT THE COMPANY (this is the ONLY company information you may state as fact):
+- Company: ${COMPANY_PROFILE.name}, based in ${COMPANY_PROFILE.city}, founded in ${COMPANY_PROFILE.foundedYear}, ${COMPANY_PROFILE.gstDisplayText}.
+- Corridors we serve: ${corridors}.
+- Services we offer:
+${offeredBullets}
+- Services we do NOT offer:
+${notOfferedBullets}
+- Prices: only the ballpark figure given in the BALLPARK PRICING section; never any other price, rate, discount or fee.
+
+RULES FOR QUESTIONS ABOUT THE COMPANY:
+1. Never state or imply any service, capability, equipment, certification, policy, guarantee, discount, price or timeline that is not listed above.
+2. If asked about something under "Services we do NOT offer", say plainly that we do not offer it, then offer to connect them with the team if they want to discuss alternatives.
+3. If asked about anything else that is not listed above (for example insurance, payment terms, cancellation, delivery timelines, vehicle or crew details), do not guess and do not deny: say you will confirm it with the team, and invite them to tap "Talk to a Human" in the menu or ask to speak to the team. Keep helping with everything you do know.`;
+}

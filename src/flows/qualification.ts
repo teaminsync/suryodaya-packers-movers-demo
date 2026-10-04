@@ -4,7 +4,7 @@
 
 import { z } from "zod";
 import { aiRouter } from "../ai/router.js";
-import { COMPANY_PROFILE, getBallparkRange } from "../company/profile.js";
+import { COMPANY_PROFILE, getBallparkRange, buildCompanyFactsBlock } from "../company/profile.js";
 import type { AIRequest } from "../ai/types.js";
 
 /**
@@ -81,6 +81,8 @@ export async function processConversationTurn(
 The company operates in these service corridors: ${COMPANY_PROFILE.serviceCorridors.join(", ")}.
 
 Your values: ${COMPANY_PROFILE.valuesStatement}.
+
+${buildCompanyFactsBlock()}
 
 ${COMPANY_PROFILE.demoNumberDisclosureNote}
 
