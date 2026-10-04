@@ -512,19 +512,31 @@ export class GeminiAdapter implements AIProviderAdapter {
             continue;
           }
         } else if (error instanceof Error && error.name === "AbortError") {
-          throw new AIProviderError(
+          const abortError = new AIProviderError(
             `Gemini request timeout after ${timeout}ms`,
             "gemini",
             undefined,
             error
           );
+          console.error("[Gemini] Request failed:", {
+            taskName: request.taskName,
+            latencyMs: Date.now() - startTime,
+            error: abortError.message,
+          });
+          throw abortError;
         } else {
-          throw new AIProviderError(
+          const genericError = new AIProviderError(
             `Gemini request failed: ${error instanceof Error ? error.message : String(error)}`,
             "gemini",
             undefined,
             error
           );
+          console.error("[Gemini] Request failed:", {
+            taskName: request.taskName,
+            latencyMs: Date.now() - startTime,
+            error: genericError.message,
+          });
+          throw genericError;
         }
       }
     }

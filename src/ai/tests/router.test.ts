@@ -258,3 +258,89 @@ describe("AIRouter", () => {
     expect(geminiLikeMock.callCount).toBe(0);
   });
 });
+
+describe("AIRouter initialization with Groq", () => {
+  let savedGeminiKey: string | undefined;
+  let savedAnthropicKey: string | undefined;
+  let savedForceProvider: string | undefined;
+  let savedGroqKey: string | undefined;
+
+  beforeEach(() => {
+    savedGeminiKey = process.env.GEMINI_API_KEY;
+    savedAnthropicKey = process.env.ANTHROPIC_API_KEY;
+    savedForceProvider = process.env.AI_FORCE_PROVIDER;
+    savedGroqKey = process.env.GROQ_API_KEY;
+  });
+
+  afterEach(() => {
+    if (savedGeminiKey !== undefined) {
+      process.env.GEMINI_API_KEY = savedGeminiKey;
+    } else {
+      delete process.env.GEMINI_API_KEY;
+    }
+
+    if (savedAnthropicKey !== undefined) {
+      process.env.ANTHROPIC_API_KEY = savedAnthropicKey;
+    } else {
+      delete process.env.ANTHROPIC_API_KEY;
+    }
+
+    if (savedForceProvider !== undefined) {
+      process.env.AI_FORCE_PROVIDER = savedForceProvider;
+    } else {
+      delete process.env.AI_FORCE_PROVIDER;
+    }
+
+    if (savedGroqKey !== undefined) {
+      process.env.GROQ_API_KEY = savedGroqKey;
+    } else {
+      delete process.env.GROQ_API_KEY;
+    }
+  });
+
+  it("should add Groq fallback when GROQ_API_KEY is set", async () => {
+    process.env.GEMINI_API_KEY = "test-gemini";
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.AI_FORCE_PROVIDER;
+    process.env.GROQ_API_KEY = "test-groq";
+
+    const router = AIRouter.getInstance();
+    router.reset();
+    await router.initialize();
+
+    const config = router.getConfig();
+    expect(config?.primary.name).toBe("gemini");
+    expect(config?.fallbacks.map((f) => f.name)).toEqual(["groq"]);
+  });
+
+  it("should not add Groq fallback when GROQ_API_KEY is unset", async () => {
+    process.env.GEMINI_API_KEY = "test-gemini";
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.AI_FORCE_PROVIDER;
+    delete process.env.GROQ_API_KEY;
+
+    const router = AIRouter.getInstance();
+    router.reset();
+    await router.initialize();
+
+    const config = router.getConfig();
+    expect(config?.primary.name).toBe("gemini");
+    expect(config?.fallbacks).toEqual([]);
+  });
+
+  it("should not add Groq when AI_FORCE_PROVIDER is gemini", async () => {
+    process.env.GEMINI_API_KEY = "test-gemini";
+    delete process.env.ANTHROPIC_API_KEY;
+    process.env.AI_FORCE_PROVIDER = "gemini";
+    process.env.GROQ_API_KEY = "test-groq";
+
+    const router = AIRouter.getInstance();
+    router.reset();
+    await router.initialize();
+
+    const config = router.getConfig();
+    expect(config?.primary.name).toBe("gemini");
+    expect(config?.fallbacks).toEqual([]);
+  });
+});
+

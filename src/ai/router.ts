@@ -3,6 +3,7 @@ import { AIRequest, AIResponse, ProviderName } from "./types.js";
 import { AIProviderAdapter } from "./providers/provider.interface.js";
 import { ClaudeAdapter } from "./providers/claude.js";
 import { GeminiAdapter } from "./providers/gemini.js";
+import { GroqAdapter } from "./providers/groq.js";
 import {
   AISchemaValidationError,
   AIAllProvidersFailed,
@@ -93,6 +94,15 @@ export class AIRouter {
           console.info(
             "🚀 AI mode: PRODUCTION (Anthropic key validated, Claude primary / Gemini fallback)"
           );
+
+          // Add Groq as last-resort fallback if configured
+          if (process.env.GROQ_API_KEY) {
+            this.config.fallbacks.push(new GroqAdapter());
+            console.info(
+              `🛟 Groq fallback enabled (model: ${process.env.GROQ_MODEL || "openai/gpt-oss-120b"})`
+            );
+          }
+
           this.initialized = true;
           return;
         } else {
@@ -117,6 +127,15 @@ export class AIRouter {
     console.info(
       "🎮 AI mode: DEMO (no valid Anthropic key found, Gemini primary, no fallback configured)"
     );
+
+    // Add Groq as last-resort fallback if configured
+    if (process.env.GROQ_API_KEY) {
+      this.config.fallbacks.push(new GroqAdapter());
+      console.info(
+        `🛟 Groq fallback enabled (model: ${process.env.GROQ_MODEL || "openai/gpt-oss-120b"})`
+      );
+    }
+
     this.initialized = true;
   }
 
