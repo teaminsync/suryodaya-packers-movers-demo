@@ -43,16 +43,12 @@ export const turnResponseSchema = z.object({
 export type TurnResponse = z.infer<typeof turnResponseSchema>;
 
 /**
- * Process a conversation turn - extract info, generate reply, detect intent
+ * Build the AI request for a conversation turn
  */
-export async function processConversationTurn(
+export function buildConversationRequest(
   messageText: string,
   knownLeadInfo: Partial<LeadInfo>
-): Promise<{
-  data: TurnResponse;
-  providerUsed: import("../ai/types.js").ProviderName;
-  wasFailover: boolean;
-}> {
+): AIRequest<typeof turnResponseSchema> {
   // Build context summary from known info
   const knownContext = Object.entries(knownLeadInfo)
     .filter(([_, value]) => value !== null && value !== undefined)
@@ -121,6 +117,21 @@ Set wantsHuman to true if they ask to speak with a person, team member, or human
     taskName: "conversation_turn",
   };
 
+  return request;
+}
+
+/**
+ * Process a conversation turn - extract info, generate reply, detect intent
+ */
+export async function processConversationTurn(
+  messageText: string,
+  knownLeadInfo: Partial<LeadInfo>
+): Promise<{
+  data: TurnResponse;
+  providerUsed: import("../ai/types.js").ProviderName;
+  wasFailover: boolean;
+}> {
+  const request = buildConversationRequest(messageText, knownLeadInfo);
   const response = await aiRouter.call(request);
 
   return {
