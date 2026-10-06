@@ -132,4 +132,83 @@ describe("GeminiAdapter retry logic", () => {
     expect(fetchCallCount).toBe(1);
     expect(result.raw).toEqual({ ok: true });
   });
+
+  test("429 with QuotaFailure PerDay and RetryInfo 57058s -> rejects with AIProviderError statusCode 429, fetch called exactly 1 time", async () => {
+    const adapter = new GeminiAdapter({ retryDelaysMs: [1, 1] });
+    const schema = z.object({ ok: z.boolean() });
+
+    const quotaExhaustedBody = {
+      error: {
+        code: 429,
+        message: "Resource exhausted",
+        details: [
+          {
+            "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+            violations: [
+              {
+                quotaId: "GenerateRequestsPerDayPerProjectPerModel-FreeTier",
+              },
+            ],
+          },
+          {
+            "@type": "type.googleapis.com/google.rpc.RetryInfo",
+            retryDelay: "57058s",
+          },
+        ],
+      },
+    };
+
+    globalThis.fetch = async () => {
+      fetchCallCount++;
+      return new Response(JSON.stringify(quotaExhaustedBody), {
+        status: 429,
+        statusText: "Too Many Requests",
+      });
+    };
+
+    let caught: unknown;
+    try {
+      await adapter.call({
+        systemPrompt: "test",
+        userPrompt: "test",
+        responseSchema: schema,
+        taskName: "retry_test",
+      });
+    } catch (e) {
+      caught = e;
+    }
+
+    expect(caught).toBeInstanceOf(AIProviderError);
+    expect((caught as AIProviderError).statusCode).toBe(429);
+    expect(fetchCallCount).toBe(1);
+  });
+
+  test("429 with generic error on first call, then 200 -> resolves, fetch called exactly 2 times", async () => {
+    const adapter = new GeminiAdapter({ retryDelaysMs: [1, 1] });
+    const schema = z.object({ ok: z.boolean() });
+
+    globalThis.fetch = async () => {
+      fetchCallCount++;
+      if (fetchCallCount === 1) {
+        return new Response(JSON.stringify({ error: { code: 429 } }), {
+          status: 429,
+          statusText: "Too Many Requests",
+        });
+      }
+      return new Response(JSON.stringify(successBody), {
+        status: 200,
+        statusText: "OK",
+      });
+    };
+
+    const result = await adapter.call({
+      systemPrompt: "test",
+      userPrompt: "test",
+      responseSchema: schema,
+      taskName: "retry_test",
+    });
+
+    expect(fetchCallCount).toBe(2);
+    expect(result.raw).toEqual({ ok: true });
+  });
 });

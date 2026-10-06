@@ -377,6 +377,7 @@ export class GeminiAdapter implements AIProviderAdapter {
     // Retry logic: only for generateContent, not video upload
     const maxAttempts = hasVideo ? 1 : 1 + this.retryDelaysMs.length;
     let lastError: AIProviderError | null = null;
+    let quotaExhausted = false;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
@@ -396,6 +397,64 @@ export class GeminiAdapter implements AIProviderAdapter {
 
         if (!response.ok) {
           const errorText = await response.text();
+          
+          // Check for quota exhaustion on 429
+          let retrySeconds: number | null = null;
+          if (response.status === 429) {
+            try {
+              const errorBody = JSON.parse(errorText);
+              const details = errorBody?.error?.details || [];
+              
+              for (const detail of details) {
+                const typeName = detail["@type"] || "";
+                
+                // Check RetryInfo for long delays
+                if (typeName.endsWith("RetryInfo") && detail.retryDelay) {
+                  const delayMatch = detail.retryDelay.match(/(\d+)s/);
+                  if (delayMatch) {
+                    const seconds = parseInt(delayMatch[1], 10);
+                    retrySeconds = seconds;
+                    if (seconds > 10) {
+                      quotaExhausted = true;
+                      break;
+                    }
+                  }
+                }
+                
+                // Check QuotaFailure for PerDay quotas
+                if (typeName.endsWith("QuotaFailure") && detail.violations) {
+                  for (const violation of detail.violations) {
+                    if (violation.quotaId && violation.quotaId.includes("PerDay")) {
+                      quotaExhausted = true;
+                      break;
+                    }
+                  }
+                  if (quotaExhausted) break;
+                }
+              }
+            } catch (parseError) {
+              // Ignore parse failures
+            }
+          }
+          
+          // If quota exhausted, don't retry
+          if (quotaExhausted) {
+            console.warn(`[Gemini] Quota exhausted (retryDelay ${retrySeconds ?? "unknown"}s), not retrying`, {
+              taskName: request.taskName,
+            });
+            console.error("[Gemini] HTTP error response:", {
+              status: response.status,
+              statusText: response.statusText,
+              body: errorText,
+            });
+            throw new AIProviderError(
+              `Gemini API HTTP ${response.status}: ${response.statusText}`,
+              "gemini",
+              response.status,
+              errorText
+            );
+          }
+          
           const isRetryable = [429, 500, 503, 504].includes(response.status);
           
           if (isRetryable && attempt < maxAttempts) {
@@ -489,6 +548,17 @@ export class GeminiAdapter implements AIProviderAdapter {
       } catch (error) {
         if (error instanceof AIProviderError) {
           lastError = error;
+          
+          // Quota exhaustion: don't retry
+          if (quotaExhausted) {
+            console.error("[Gemini] Request failed:", {
+              taskName: request.taskName,
+              latencyMs: Date.now() - startTime,
+              error: error.message,
+            });
+            throw error;
+          }
+          
           // Non-retryable errors, rethrow immediately
           if (error.statusCode && ![429, 500, 503, 504].includes(error.statusCode)) {
             console.error("[Gemini] Request failed:", {

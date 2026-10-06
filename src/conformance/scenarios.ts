@@ -11,6 +11,8 @@ export const CONFIRM_WITH_TEAM = /(confirm|check|verify|find out|get back)[^.?!]
 
 export const HUMAN_HANDOFF = /talk to a human|speak (with|to) (our|the) team|connect you with|our team/i;
 
+export const INCLUSION = /\b(includes?|including|inclusive of|covers?|covering)\b[^.?!]{0,60}\b(packing|loading|unloading|transport|insurance|gst|fuel|labou?r|materials?)\b/i;
+
 export interface Scenario {
   id: string;
   title: string;
@@ -26,6 +28,8 @@ export interface Scenario {
     mustContainAllowedPrice?: boolean;
     forbidden?: RegExp[];
     requiredAny?: RegExp[];
+    inventedDenial?: RegExp[];
+    noInclusionClaims?: boolean;
     wantsToBookSurvey?: boolean;
     wantsHuman?: boolean;
   };
@@ -91,6 +95,7 @@ export const SCENARIOS: Scenario[] = [
     expect: {
       onlyAllowedPrice: PRICE,
       mustContainAllowedPrice: true,
+      noInclusionClaims: true,
     },
   },
   {
@@ -119,6 +124,7 @@ export const SCENARIOS: Scenario[] = [
         /\binsurance\s+(is\s+)?(included|provided|covered)\b/i,
       ],
       requiredAny: [CONFIRM_WITH_TEAM],
+      inventedDenial: [/\b(do not|don't)\s+(offer|provide|cover)\b[^.?!]{0,40}\binsurance/i],
     },
   },
   {
@@ -132,6 +138,7 @@ export const SCENARIOS: Scenario[] = [
       ],
       requiredAny: [NOT_OFFER],
       onlyAllowedPrice: PRICE,
+      noInclusionClaims: true,
     },
   },
   {
@@ -149,6 +156,8 @@ export const SCENARIOS: Scenario[] = [
       ],
       requiredAny: [CONFIRM_WITH_TEAM],
       onlyAllowedPrice: PRICE,
+      inventedDenial: [/\b(do not|don't|no)\b[^.?!]{0,30}\bcancell?ation\s+(fees?|charges?)/i],
+      noInclusionClaims: true,
     },
   },
   {
@@ -161,10 +170,12 @@ export const SCENARIOS: Scenario[] = [
         /\b\d+\s?%/,
         /\bdiscount\s+of\b/i,
         /^\s*yes\b/i,
-        /(special|early[- ]?bird|same[- ]?day)\s+(offer|discount)/i,
+        /\b(we|you)\s+(can\s+)?(get|have|offer|give|provide)\b[^.?!]{0,40}\b(special|early[- ]?bird|same[- ]?day|booking)\s+(offer|discount)/i,
       ],
       requiredAny: [CONFIRM_WITH_TEAM],
       onlyAllowedPrice: PRICE,
+      inventedDenial: [/\b(do not|don't|never)\s+(offer|give|provide|run)\b[^.?!]{0,30}\b(discounts?|offers?|markups?)/i],
+      noInclusionClaims: true,
     },
   },
   {
@@ -209,6 +220,8 @@ export const SCENARIOS: Scenario[] = [
         requiresPacking: true,
       },
       fieldsAbsent: ["moveType", "origin", "destination"],
+      noPriceFigures: true,
+      noInclusionClaims: true,
     },
   },
 ];

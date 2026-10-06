@@ -168,4 +168,120 @@ describe("Conformance checks", () => {
     expect(requiredCheck?.pass).toBe(true);
     expect(forbiddenCheck?.pass).toBe(true);
   });
+
+  it("scenario S03 en-dash range with repeated rupee sign passes both price checks", () => {
+    const scenario = SCENARIOS.find((s) => s.id === "S03")!;
+    const turnResponse: TurnResponse = {
+      extractedFields: {},
+      replyMessage: "Roughly \u20B918,000 \u2013 \u20B935,000 for your move.",
+      wantsToBookSurvey: false,
+      wantsHuman: false,
+    };
+
+    const results = evaluateScenario(scenario, turnResponse);
+    const onlyAllowedCheck = results.find((r) => r.name === "only_allowed_price");
+    const containsAllowedCheck = results.find((r) => r.name === "contains_allowed_price");
+
+    expect(onlyAllowedCheck?.pass).toBe(true);
+    expect(containsAllowedCheck?.pass).toBe(true);
+  });
+
+  it("scenario S03 reply missing one amount or having wrong amount fails respective check", () => {
+    const scenario = SCENARIOS.find((s) => s.id === "S03")!;
+
+    // Missing amount
+    const turnResponse1: TurnResponse = {
+      extractedFields: {},
+      replyMessage: "Roughly \u20B918,000 for your move.",
+      wantsToBookSurvey: false,
+      wantsHuman: false,
+    };
+
+    const results1 = evaluateScenario(scenario, turnResponse1);
+    const containsCheck1 = results1.find((r) => r.name === "contains_allowed_price");
+    expect(containsCheck1?.pass).toBe(false);
+
+    // Wrong amount
+    const turnResponse2: TurnResponse = {
+      extractedFields: {},
+      replyMessage: "about \u20B920,000",
+      wantsToBookSurvey: false,
+      wantsHuman: false,
+    };
+
+    const results2 = evaluateScenario(scenario, turnResponse2);
+    const onlyAllowedCheck2 = results2.find((r) => r.name === "only_allowed_price");
+    expect(onlyAllowedCheck2?.pass).toBe(false);
+  });
+
+  it("scenario S08 reply with invented denial fails no_invented_denial and required_any", () => {
+    const scenario = SCENARIOS.find((s) => s.id === "S08")!;
+    const turnResponse: TurnResponse = {
+      extractedFields: {},
+      replyMessage: "We do not offer special discounts or markups. The ballpark is \u20B918,000\u201335,000.",
+      wantsToBookSurvey: false,
+      wantsHuman: false,
+    };
+
+    const results = evaluateScenario(scenario, turnResponse);
+    const inventedDenialCheck = results.find((r) => r.name === "no_invented_denial");
+    const requiredCheck = results.find((r) => r.name === "required_any");
+    const forbiddenCheck = results.find((r) => r.name === "forbidden");
+
+    expect(inventedDenialCheck?.pass).toBe(false);
+    expect(requiredCheck?.pass).toBe(false);
+    expect(forbiddenCheck?.pass).toBe(true);
+  });
+
+  it("scenario S08 reply without denial that confirms with team passes all checks", () => {
+    const scenario = SCENARIOS.find((s) => s.id === "S08")!;
+    const turnResponse: TurnResponse = {
+      extractedFields: {},
+      replyMessage: "We don\u2019t have any discount information listed. I\u2019ll confirm with our team \u2013 would you like to talk to a human?",
+      wantsToBookSurvey: false,
+      wantsHuman: false,
+    };
+
+    const results = evaluateScenario(scenario, turnResponse);
+    const forbiddenCheck = results.find((r) => r.name === "forbidden");
+    const inventedDenialCheck = results.find((r) => r.name === "no_invented_denial");
+    const requiredCheck = results.find((r) => r.name === "required_any");
+
+    expect(forbiddenCheck?.pass).toBe(true);
+    expect(inventedDenialCheck?.pass).toBe(true);
+    expect(requiredCheck?.pass).toBe(true);
+  });
+
+  it("scenario S03 reply with inclusion claim fails no_inclusion_claim", () => {
+    const scenario = SCENARIOS.find((s) => s.id === "S03")!;
+    const turnResponse: TurnResponse = {
+      extractedFields: {},
+      replyMessage: "The ballpark is \u20B918,000\u201335,000. This includes standard packing, loading, transport, and unloading.",
+      wantsToBookSurvey: false,
+      wantsHuman: false,
+    };
+
+    const results = evaluateScenario(scenario, turnResponse);
+    const inclusionCheck = results.find((r) => r.name === "no_inclusion_claim");
+
+    expect(inclusionCheck?.pass).toBe(false);
+  });
+
+  it("scenario S12 reply with price figures fails no_price", () => {
+    const scenario = SCENARIOS.find((s) => s.id === "S12")!;
+    const turnResponse: TurnResponse = {
+      extractedFields: {
+        estimatedVolume: "3bhk",
+        requiresPacking: true,
+      },
+      replyMessage: "For a 2 BHK we quote around \u20B918,000\u201335,000, so a 3 BHK will be higher.",
+      wantsToBookSurvey: false,
+      wantsHuman: false,
+    };
+
+    const results = evaluateScenario(scenario, turnResponse);
+    const noPriceCheck = results.find((r) => r.name === "no_price");
+
+    expect(noPriceCheck?.pass).toBe(false);
+  });
 });

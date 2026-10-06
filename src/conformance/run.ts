@@ -6,6 +6,9 @@ import { SCENARIOS } from "./scenarios.js";
 import { evaluateScenario } from "./checks.js";
 import type { CheckResult } from "./checks.js";
 
+// CLI use: npx tsx src/conformance/run.ts --only=S05
+// (npm run drops args in this shell)
+
 // Silence adapter chatter
 console.debug = () => {};
 console.info = () => {};
@@ -50,6 +53,14 @@ async function main() {
     if (arg.startsWith("--only=")) {
       onlyScenario = arg.split("=")[1];
     }
+  }
+
+  // Environment fallbacks
+  if (providerFilter === "both" && process.env.CONFORMANCE_PROVIDER) {
+    providerFilter = process.env.CONFORMANCE_PROVIDER;
+  }
+  if (!onlyScenario && process.env.CONFORMANCE_ONLY) {
+    onlyScenario = process.env.CONFORMANCE_ONLY;
   }
 
   // Initialize adapters

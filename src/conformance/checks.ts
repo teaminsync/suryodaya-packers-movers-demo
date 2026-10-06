@@ -4,6 +4,7 @@
 
 import type { TurnResponse } from "../flows/qualification.js";
 import type { Scenario } from "./scenarios.js";
+import { INCLUSION } from "./scenarios.js";
 
 export interface CheckResult {
   name: string;
@@ -22,6 +23,26 @@ export function normalizeText(text: string): string {
 export function findCurrencyAmounts(text: string): string[] {
   const matches = text.matchAll(/(\u20B9|rs\.?|inr)\s?\d[\d,]*/gi);
   return Array.from(matches).map((m) => m[0]);
+}
+
+export function extractAmounts(text: string): number[] {
+  const normalized = normalizeText(text);
+  const matches = normalized.matchAll(/\d{1,3}(?:,\d{3})+|\d{4,}/g);
+  const amounts: number[] = [];
+  
+  for (const match of matches) {
+    const numStr = match[0].replace(/,/g, "");
+    const num = parseInt(numStr, 10);
+    
+    // Drop plain 4-digit integers from 1900 to 2100 that had no comma (likely years)
+    if (numStr.length === 4 && !match[0].includes(",") && num >= 1900 && num <= 2100) {
+      continue;
+    }
+    
+    amounts.push(num);
+  }
+  
+  return amounts;
 }
 
 export function evaluateScenario(
@@ -103,34 +124,37 @@ export function evaluateScenario(
 
   // no_price - no currency amounts in reply
   if (scenario.expect.noPriceFigures) {
-    const amounts = findCurrencyAmounts(reply);
+    const textAmounts = findCurrencyAmounts(reply);
+    const numericAmounts = extractAmounts(reply);
+    const pass = textAmounts.length === 0 && numericAmounts.length === 0;
     results.push({
       name: "no_price",
-      pass: amounts.length === 0,
-      detail: amounts.length > 0 ? `Found: ${amounts.join(", ")}` : undefined,
+      pass,
+      detail: pass ? undefined : `Found currency: ${textAmounts.join(", ")}; numbers: ${numericAmounts.join(", ")}`,
     });
   }
 
-  // only_allowed_price - after removing allowed price, no other currency amounts remain
+  // only_allowed_price - every number in reply must be in allowed price
   if (scenario.expect.onlyAllowedPrice) {
-    const normalizedAllowed = normalizeText(scenario.expect.onlyAllowedPrice);
-    const withoutAllowed = reply.replace(normalizedAllowed, "");
-    const remainingAmounts = findCurrencyAmounts(withoutAllowed);
+    const allowedAmounts = extractAmounts(scenario.expect.onlyAllowedPrice);
+    const replyAmounts = extractAmounts(reply);
+    const disallowed = replyAmounts.filter(amt => !allowedAmounts.includes(amt));
     results.push({
       name: "only_allowed_price",
-      pass: remainingAmounts.length === 0,
-      detail: remainingAmounts.length > 0 ? `Other prices found: ${remainingAmounts.join(", ")}` : undefined,
+      pass: disallowed.length === 0,
+      detail: disallowed.length > 0 ? `Disallowed amounts: ${disallowed.join(", ")}` : undefined,
     });
   }
 
-  // contains_allowed_price - normalized reply contains normalized allowed price
+  // contains_allowed_price - every number in allowed price must appear in reply
   if (scenario.expect.mustContainAllowedPrice && scenario.expect.onlyAllowedPrice) {
-    const normalizedAllowed = normalizeText(scenario.expect.onlyAllowedPrice);
-    const contains = reply.includes(normalizedAllowed);
+    const allowedAmounts = extractAmounts(scenario.expect.onlyAllowedPrice);
+    const replyAmounts = extractAmounts(reply);
+    const missing = allowedAmounts.filter(amt => !replyAmounts.includes(amt));
     results.push({
       name: "contains_allowed_price",
-      pass: contains,
-      detail: contains ? undefined : `Expected price "${scenario.expect.onlyAllowedPrice}" not found`,
+      pass: missing.length === 0,
+      detail: missing.length > 0 ? `Missing amounts: ${missing.join(", ")}` : undefined,
     });
   }
 
@@ -156,6 +180,31 @@ export function evaluateScenario(
       name: "required_any",
       pass: matched,
       detail: matched ? undefined : "No required pattern matched",
+    });
+  }
+
+  // no_invented_denial - none of the inventedDenial patterns should match
+  if (scenario.expect.inventedDenial) {
+    const matches: string[] = [];
+    for (const pattern of scenario.expect.inventedDenial) {
+      if (pattern.test(reply)) {
+        matches.push(pattern.source);
+      }
+    }
+    results.push({
+      name: "no_invented_denial",
+      pass: matches.length === 0,
+      detail: matches.length > 0 ? `Matched: ${matches.join("; ")}` : undefined,
+    });
+  }
+
+  // no_inclusion_claim - INCLUSION pattern must not match
+  if (scenario.expect.noInclusionClaims) {
+    const matches = INCLUSION.test(reply);
+    results.push({
+      name: "no_inclusion_claim",
+      pass: !matches,
+      detail: matches ? `Matched: ${INCLUSION.source}` : undefined,
     });
   }
 
