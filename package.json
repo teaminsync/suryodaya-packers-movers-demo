@@ -10,7 +10,7 @@
     "server": "tsx src/server.ts",
     "dev": "tsx watch src/index.ts",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
-    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js router.test.ts gemini-retry.test.ts groq-adapter.test.ts company-facts.test.ts checks.test.ts",
+    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js router.test.ts gemini-retry.test.ts groq-adapter.test.ts company-facts.test.ts checks.test.ts followup.test.ts",
     "conformance": "tsx src/conformance/run.ts",
     "test:live:gemini": "cross-env RUN_LIVE_TESTS=true node --experimental-vm-modules node_modules/jest/bin/jest.js live-gemini",
     "test:live:claude": "cross-env RUN_LIVE_TESTS=true node --experimental-vm-modules node_modules/jest/bin/jest.js live-claude",

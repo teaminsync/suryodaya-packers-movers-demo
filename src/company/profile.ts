@@ -63,6 +63,8 @@ export function getBallparkRange(
   return volumeRanges[moveType] || volumeRanges.local;
 }
 
+export const COMPANY_SURVEY_FACT = "free, about 15-30 minutes, and it confirms the exact, itemised quote";
+
 export const COMPANY_SERVICES = {
   offered: [
     "Local moves within Pune",
@@ -92,6 +94,7 @@ export function buildCompanyFactsBlock(): string {
   return `WHAT YOU MAY STATE ABOUT THE COMPANY (this is the ONLY company information you may state as fact):
 - Company: ${COMPANY_PROFILE.name}, based in ${COMPANY_PROFILE.city}, founded in ${COMPANY_PROFILE.foundedYear}, ${COMPANY_PROFILE.gstDisplayText}.
 - Corridors we serve: ${corridors}.
+- On-site survey: ${COMPANY_SURVEY_FACT}.
 - Services we offer:
 ${offeredBullets}
 - Services we do NOT offer:
@@ -101,5 +104,6 @@ ${notOfferedBullets}
 RULES FOR QUESTIONS ABOUT THE COMPANY:
 1. Never state or imply any service, capability, equipment, certification, policy, guarantee, discount, price or timeline that is not listed above.
 2. If asked about something under "Services we do NOT offer", say plainly that we do not offer it, then offer to connect them with the team if they want to discuss alternatives.
-3. If asked about anything else that is not listed above (for example insurance, payment terms, cancellation, delivery timelines, vehicle or crew details), do not guess and do not deny: say you will confirm it with the team, and invite them to tap "Talk to a Human" in the menu or ask to speak to the team. Keep helping with everything you do know.`;
+3. If asked about anything else that is not listed above (for example insurance, payment terms, cancellation, delivery timelines, vehicle or crew details), do not guess and do not deny: say you will confirm it with the team, and invite them to tap "Talk to a Human" in the menu or ask to speak to the team. Keep helping with everything you do know.
+4. Never say or imply what a price includes or excludes (for example packing, loading, transport, unloading, insurance, taxes, fuel, labour or materials). If asked, say the exact inclusions are itemised in the written quote after the free on-site survey.`;
 }

@@ -64,6 +64,7 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
   // Lazy imports to avoid circular dependency issues
   const { isMessageProcessed, markMessageProcessed, findActiveLead, createLead, mergeLeadFields, setLeadStatus, setLeadEscalated, findOpenBookingOffer, createBookingOffer, recordSlotSelection, createMessage } = await import("../leads/repository.js");
   const { processConversationTurn } = await import("../flows/qualification.js");
+  const { promisesTeamFollowUp } = await import("../flows/followup.js");
   const { generateSlotOptions, parseSlotSelection, buildConfirmationMessage } = await import("../flows/booking.js");
   const { getBallparkRange } = await import("../company/profile.js");
   const { whatsappClient } = await import("./client.js");
@@ -533,6 +534,7 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
               failover: turnResult.wasFailover,
               wantsToBookSurvey: turnResult.data.wantsToBookSurvey,
               wantsHuman: turnResult.data.wantsHuman,
+              needsTeamFollowUp: turnResult.data.needsTeamFollowUp,
             });
 
             // Merge any extracted fields
@@ -616,6 +618,14 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
               });
               
               console.log("[Webhook] Escalated via free text");
+            }
+
+            const followUpNeeded =
+              !turnResult.data.wantsHuman &&
+              (turnResult.data.needsTeamFollowUp || promisesTeamFollowUp(turnResult.data.replyMessage));
+            if (followUpNeeded && !lead.escalated) {
+              await setLeadEscalated(lead.id);
+              console.log("[Webhook] Flagged for team follow-up (reply promised a team confirmation):", { leadId: lead.id, byModel: turnResult.data.needsTeamFollowUp });
             }
 
             // Send quick-reply options (if this is a substantive turn)

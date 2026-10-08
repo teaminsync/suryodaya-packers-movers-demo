@@ -17,6 +17,7 @@ describe("Conformance checks", () => {
       replyMessage: reply,
       wantsToBookSurvey: false,
       wantsHuman: false,
+      needsTeamFollowUp: false,
     };
 
     const results = evaluateScenario(scenario, turnResponse);
@@ -29,6 +30,7 @@ describe("Conformance checks", () => {
       replyMessage: "about \u20B920,000",
       wantsToBookSurvey: false,
       wantsHuman: false,
+      needsTeamFollowUp: false,
     };
 
     const results2 = evaluateScenario(scenario, turnResponse2);
@@ -44,6 +46,7 @@ describe("Conformance checks", () => {
       replyMessage: "that is Rs. 5000",
       wantsToBookSurvey: false,
       wantsHuman: false,
+      needsTeamFollowUp: false,
     };
 
     const results1 = evaluateScenario(scenario, turnResponse1);
@@ -55,6 +58,7 @@ describe("Conformance checks", () => {
       replyMessage: "I need more details first",
       wantsToBookSurvey: false,
       wantsHuman: false,
+      needsTeamFollowUp: false,
     };
 
     const results2 = evaluateScenario(scenario, turnResponse2);
@@ -74,6 +78,7 @@ describe("Conformance checks", () => {
       replyMessage: "Yes, we offer short-term storage at our warehouses in Pune",
       wantsToBookSurvey: false,
       wantsHuman: false,
+      needsTeamFollowUp: false,
     };
 
     const results = evaluateScenario(scenario, turnResponse);
@@ -95,6 +100,7 @@ describe("Conformance checks", () => {
       replyMessage: "Got it, updating to 3BHK with packing",
       wantsToBookSurvey: false,
       wantsHuman: false,
+      needsTeamFollowUp: false,
     };
 
     const results = evaluateScenario(scenario, turnResponse);
@@ -112,6 +118,7 @@ describe("Conformance checks", () => {
       replyMessage: "x",
       wantsToBookSurvey: false,
       wantsHuman: false,
+      needsTeamFollowUp: false,
     };
 
     const result = turnResponseSchema.safeParse(data);
@@ -125,6 +132,7 @@ describe("Conformance checks", () => {
       replyMessage: "We\u2019ll check on the insurance coverage for your move and get back to you. For a quick answer, you can tap \u201CTalk to a Human\u201D in the menu or let us know if you\u2019d like to speak with our team.",
       wantsToBookSurvey: false,
       wantsHuman: false,
+      needsTeamFollowUp: false,
     };
 
     const results = evaluateScenario(scenario, turnResponse);
@@ -142,6 +150,7 @@ describe("Conformance checks", () => {
       replyMessage: "We don\u2019t offer storage or short\u2011term warehousing.",
       wantsToBookSurvey: false,
       wantsHuman: false,
+      needsTeamFollowUp: false,
     };
 
     const results = evaluateScenario(scenario, turnResponse);
@@ -159,6 +168,7 @@ describe("Conformance checks", () => {
       replyMessage: "We do not offer storage facilities. Our team can suggest alternatives.",
       wantsToBookSurvey: false,
       wantsHuman: false,
+      needsTeamFollowUp: false,
     };
 
     const results = evaluateScenario(scenario, turnResponse);
@@ -176,6 +186,7 @@ describe("Conformance checks", () => {
       replyMessage: "Roughly \u20B918,000 \u2013 \u20B935,000 for your move.",
       wantsToBookSurvey: false,
       wantsHuman: false,
+      needsTeamFollowUp: false,
     };
 
     const results = evaluateScenario(scenario, turnResponse);
@@ -195,6 +206,7 @@ describe("Conformance checks", () => {
       replyMessage: "Roughly \u20B918,000 for your move.",
       wantsToBookSurvey: false,
       wantsHuman: false,
+      needsTeamFollowUp: false,
     };
 
     const results1 = evaluateScenario(scenario, turnResponse1);
@@ -207,6 +219,7 @@ describe("Conformance checks", () => {
       replyMessage: "about \u20B920,000",
       wantsToBookSurvey: false,
       wantsHuman: false,
+      needsTeamFollowUp: false,
     };
 
     const results2 = evaluateScenario(scenario, turnResponse2);
@@ -221,6 +234,7 @@ describe("Conformance checks", () => {
       replyMessage: "We do not offer special discounts or markups. The ballpark is \u20B918,000\u201335,000.",
       wantsToBookSurvey: false,
       wantsHuman: false,
+      needsTeamFollowUp: false,
     };
 
     const results = evaluateScenario(scenario, turnResponse);
@@ -240,6 +254,7 @@ describe("Conformance checks", () => {
       replyMessage: "We don\u2019t have any discount information listed. I\u2019ll confirm with our team \u2013 would you like to talk to a human?",
       wantsToBookSurvey: false,
       wantsHuman: false,
+      needsTeamFollowUp: false,
     };
 
     const results = evaluateScenario(scenario, turnResponse);
@@ -259,6 +274,7 @@ describe("Conformance checks", () => {
       replyMessage: "The ballpark is \u20B918,000\u201335,000. This includes standard packing, loading, transport, and unloading.",
       wantsToBookSurvey: false,
       wantsHuman: false,
+      needsTeamFollowUp: false,
     };
 
     const results = evaluateScenario(scenario, turnResponse);
@@ -277,11 +293,44 @@ describe("Conformance checks", () => {
       replyMessage: "For a 2 BHK we quote around \u20B918,000\u201335,000, so a 3 BHK will be higher.",
       wantsToBookSurvey: false,
       wantsHuman: false,
+      needsTeamFollowUp: false,
     };
 
     const results = evaluateScenario(scenario, turnResponse);
     const noPriceCheck = results.find((r) => r.name === "no_price");
 
     expect(noPriceCheck?.pass).toBe(false);
+  });
+
+  it("scenario S05 with needsTeamFollowUp true passes needs_followup check", () => {
+    const scenario = SCENARIOS.find((s) => s.id === "S05")!;
+    const turnResponse: TurnResponse = {
+      extractedFields: {},
+      replyMessage: "I'll check with the team about insurance coverage.",
+      wantsToBookSurvey: false,
+      wantsHuman: false,
+      needsTeamFollowUp: true,
+    };
+
+    const results = evaluateScenario(scenario, turnResponse);
+    const followupCheck = results.find((r) => r.name === "needs_followup");
+
+    expect(followupCheck?.pass).toBe(true);
+  });
+
+  it("scenario S05 with needsTeamFollowUp false fails needs_followup check", () => {
+    const scenario = SCENARIOS.find((s) => s.id === "S05")!;
+    const turnResponse: TurnResponse = {
+      extractedFields: {},
+      replyMessage: "Insurance details are in the quote after the survey.",
+      wantsToBookSurvey: false,
+      wantsHuman: false,
+      needsTeamFollowUp: false,
+    };
+
+    const results = evaluateScenario(scenario, turnResponse);
+    const followupCheck = results.find((r) => r.name === "needs_followup");
+
+    expect(followupCheck?.pass).toBe(false);
   });
 });

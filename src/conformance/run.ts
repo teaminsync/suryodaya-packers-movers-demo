@@ -29,6 +29,7 @@ interface ProviderResult {
   extracted?: unknown;
   wantsBook?: boolean;
   wantsHuman?: boolean;
+  followup?: boolean;
 }
 
 interface ScenarioResult {
@@ -160,6 +161,7 @@ async function main() {
             extracted: turnResponse.extractedFields,
             wantsBook: turnResponse.wantsToBookSurvey,
             wantsHuman: turnResponse.wantsHuman,
+            followup: turnResponse.needsTeamFollowUp,
           };
         }
       } catch (error: unknown) {
@@ -211,7 +213,7 @@ function printResult(scenarioId: string, title: string, result: ProviderResult) 
         : result.reply;
       console.log(`  reply: ${truncated}`);
     }
-    console.log(`  extracted: ${JSON.stringify(result.extracted)}  book=${result.wantsBook} human=${result.wantsHuman}`);
+    console.log(`  extracted: ${JSON.stringify(result.extracted)}  book=${result.wantsBook} human=${result.wantsHuman} followup=${result.followup}`);
   }
 }
 

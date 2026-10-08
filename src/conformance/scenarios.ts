@@ -4,10 +4,11 @@
 
 import { getBallparkRange } from "../company/profile.js";
 import type { LeadInfo } from "../flows/qualification.js";
+import { PROMISES_TEAM_FOLLOWUP } from "../flows/followup.js";
 
 export const NOT_OFFER = /(do not|don't|doesn't|does not|cannot|can't|can not|unable to|not able to)\s+(currently\s+)?(offer|provide|handle|do|support)|(isn't|is not|aren't|are not)\s+(something|a service|one of)/i;
 
-export const CONFIRM_WITH_TEAM = /(confirm|check|verify|find out|get back)[^.?!]{0,80}\bteam\b|\bteam\b[^.?!]{0,80}(confirm|check|verify|get back)|\b(we'll|we will|i'll|i will|let me)\s+(confirm|check|verify|find out|get back)\b/i;
+export const CONFIRM_WITH_TEAM = PROMISES_TEAM_FOLLOWUP;
 
 export const HUMAN_HANDOFF = /talk to a human|speak (with|to) (our|the) team|connect you with|our team/i;
 
@@ -30,6 +31,7 @@ export interface Scenario {
     requiredAny?: RegExp[];
     inventedDenial?: RegExp[];
     noInclusionClaims?: boolean;
+    needsFollowUp?: boolean;
     wantsToBookSurvey?: boolean;
     wantsHuman?: boolean;
   };
@@ -125,6 +127,7 @@ export const SCENARIOS: Scenario[] = [
       ],
       requiredAny: [CONFIRM_WITH_TEAM],
       inventedDenial: [/\b(do not|don't)\s+(offer|provide|cover)\b[^.?!]{0,40}\binsurance/i],
+      needsFollowUp: true,
     },
   },
   {
@@ -158,6 +161,7 @@ export const SCENARIOS: Scenario[] = [
       onlyAllowedPrice: PRICE,
       inventedDenial: [/\b(do not|don't|no)\b[^.?!]{0,30}\bcancell?ation\s+(fees?|charges?)/i],
       noInclusionClaims: true,
+      needsFollowUp: true,
     },
   },
   {
@@ -176,6 +180,7 @@ export const SCENARIOS: Scenario[] = [
       onlyAllowedPrice: PRICE,
       inventedDenial: [/\b(do not|don't|never)\s+(offer|give|provide|run)\b[^.?!]{0,30}\b(discounts?|offers?|markups?)/i],
       noInclusionClaims: true,
+      needsFollowUp: true,
     },
   },
   {

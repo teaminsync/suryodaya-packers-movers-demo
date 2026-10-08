@@ -38,6 +38,7 @@ export const turnResponseSchema = z.object({
   replyMessage: z.string(),
   wantsToBookSurvey: z.boolean(),
   wantsHuman: z.boolean(),
+  needsTeamFollowUp: z.boolean(),
 });
 
 export type TurnResponse = z.infer<typeof turnResponseSchema>;
@@ -66,7 +67,7 @@ export function buildConversationRequest(
       knownLeadInfo.estimatedVolume,
       knownLeadInfo.moveType
     );
-    ballparkInstruction = `\n\nBALLPARK PRICING: For this move (${knownLeadInfo.estimatedVolume} ${knownLeadInfo.moveType}), the approximate price range is ${ballparkRange}. If you mention pricing in your reply, you MUST use this exact figure - never invent or guess a different number. This is a ballpark only - an on-site survey gives the real quote.`;
+    ballparkInstruction = `\n\nBALLPARK PRICING: For this move (${knownLeadInfo.estimatedVolume} ${knownLeadInfo.moveType}), the approximate price range is ${ballparkRange}. If you mention pricing in your reply, you MUST use this exact figure - never invent or guess a different number. This is a ballpark only - an on-site survey gives the real quote. If the customer's CURRENT message changes the move type, home size or route, do NOT mention any price in this reply, because the figure above is for their previous details; say the estimate will be refreshed once the new details are confirmed and offer the free on-site survey.`;
   } else {
     ballparkInstruction = `\n\nBALLPARK PRICING: Not enough information yet to provide a price estimate. DO NOT mention any pricing figures in your reply. We need at least move type (local/intercity) and estimated volume (1bhk/2bhk/etc) before discussing price.`;
   }
@@ -111,7 +112,8 @@ Reply message guidelines:
 - Be warm and helpful
 
 Set wantsToBookSurvey to true if the customer explicitly asks to schedule, book, or set up a survey/visit.
-Set wantsHuman to true if they ask to speak with a person, team member, or human.${contextNote}${ballparkInstruction}`,
+Set wantsHuman to true if they ask to speak with a person, team member, or human.
+Set needsTeamFollowUp to true whenever your reply says or implies that you will confirm, check or find out something with the team or get back to the customer, or when the customer asked something you could not answer from the facts above. Otherwise set it to false.${contextNote}${ballparkInstruction}`,
     userPrompt: messageText,
     responseSchema: turnResponseSchema,
     taskName: "conversation_turn",

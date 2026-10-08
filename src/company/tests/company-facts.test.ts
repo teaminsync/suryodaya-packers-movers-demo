@@ -2,7 +2,7 @@
  * Tests for company facts block
  */
 
-import { COMPANY_PROFILE, COMPANY_SERVICES, buildCompanyFactsBlock } from "../profile.js";
+import { COMPANY_PROFILE, COMPANY_SERVICES, buildCompanyFactsBlock, COMPANY_SURVEY_FACT } from "../profile.js";
 import { AIRouter } from "../../ai/router.js";
 import { processConversationTurn } from "../../flows/qualification.js";
 import { AIProviderAdapter } from "../../ai/providers/provider.interface.js";
@@ -36,6 +36,17 @@ describe("Company facts block", () => {
     expect(block).toContain("Talk to a Human");
     expect(block).toContain("never any other price");
   });
+
+  it("should contain COMPANY_SURVEY_FACT", () => {
+    const block = buildCompanyFactsBlock();
+    expect(block).toContain(COMPANY_SURVEY_FACT);
+    expect(block).toContain("free, about 15-30 minutes, and it confirms the exact, itemised quote");
+  });
+
+  it("should contain rule about never saying what a price includes", () => {
+    const block = buildCompanyFactsBlock();
+    expect(block).toContain("Never say or imply what a price includes");
+  });
 });
 
 describe("Company facts in system prompt", () => {
@@ -63,6 +74,7 @@ describe("Company facts in system prompt", () => {
           replyMessage: "ok",
           wantsToBookSurvey: false,
           wantsHuman: false,
+          needsTeamFollowUp: false,
         } as z.infer<TSchema>,
         modelUsed: "mock",
       };
@@ -116,6 +128,26 @@ describe("Company facts in system prompt", () => {
     expect(capturedSystemPrompt).not.toBeNull();
     const factsBlock = buildCompanyFactsBlock();
     expect(capturedSystemPrompt).toContain(factsBlock);
+    expect(capturedSystemPrompt).toContain("BALLPARK PRICING");
+  });
+
+  it("should include changed details instruction when customer changes move type or size", async () => {
+    const mockProvider = new MockProvider();
+    const router = AIRouter.getInstance();
+    (router as any).config = {
+      mode: "DEMO",
+      primary: mockProvider,
+      fallbacks: [],
+    };
+    (router as any).initialized = true;
+
+    await processConversationTurn("Actually it is a 3BHK", {
+      moveType: "intercity",
+      estimatedVolume: "2bhk",
+    });
+
+    expect(capturedSystemPrompt).not.toBeNull();
+    expect(capturedSystemPrompt).toContain("CURRENT message changes");
     expect(capturedSystemPrompt).toContain("BALLPARK PRICING");
   });
 });

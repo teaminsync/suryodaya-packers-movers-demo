@@ -5,6 +5,7 @@
 import type { TurnResponse } from "../flows/qualification.js";
 import type { Scenario } from "./scenarios.js";
 import { INCLUSION } from "./scenarios.js";
+import { normalizeTypography } from "../utils/text.js";
 
 export interface CheckResult {
   name: string;
@@ -17,7 +18,7 @@ export function normalizeDashes(text: string): string {
 }
 
 export function normalizeText(text: string): string {
-  return normalizeDashes(text).replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"');
+  return normalizeTypography(text);
 }
 
 export function findCurrencyAmounts(text: string): string[] {
@@ -205,6 +206,17 @@ export function evaluateScenario(
       name: "no_inclusion_claim",
       pass: !matches,
       detail: matches ? `Matched: ${INCLUSION.source}` : undefined,
+    });
+  }
+
+  // needs_followup - boolean match
+  if (scenario.expect.needsFollowUp !== undefined) {
+    results.push({
+      name: "needs_followup",
+      pass: out.needsTeamFollowUp === scenario.expect.needsFollowUp,
+      detail: out.needsTeamFollowUp !== scenario.expect.needsFollowUp
+        ? `Expected ${scenario.expect.needsFollowUp}, got ${out.needsTeamFollowUp}`
+        : undefined,
     });
   }
 
