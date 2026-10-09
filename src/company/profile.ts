@@ -9,7 +9,7 @@ export const COMPANY_PROFILE = {
   city: "Pune",
   gstRegistered: true,
   gstDisplayText: "GST-registered, verified operator",
-  valuesStatement: "no hidden charges, itemized quotes, straight answers",
+  valuesStatement: "no hidden charges, itemised quotes, straight answers",
   serviceCorridors: ["Pune", "Mumbai", "Bengaluru", "Hyderabad", "Delhi NCR"],
   demoNumberDisclosureNote:
     "You're chatting with Suryodaya's demo line — in production this runs on your own verified Indian WhatsApp Business number, set up the same way in a few days.",

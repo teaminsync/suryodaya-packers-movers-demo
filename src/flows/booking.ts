@@ -120,5 +120,5 @@ export function parseSlotSelection(
  * Build booking confirmation message
  */
 export function buildConfirmationMessage(selectedSlot: SlotOption): string {
-  return `✅ You're booked! Your survey is confirmed for ${selectedSlot.label}.\n\nOur surveyor will visit and spend about 15-30 minutes confirming your exact, itemized quote. If you need to change the time, just message us here.\n\n- ${COMPANY_PROFILE.name}`;
+  return `✅ You're booked! Your survey is confirmed for ${selectedSlot.label}.\n\nOur surveyor will visit and spend about 15-30 minutes confirming your exact, itemised quote. If you need to change the time, just message us here.\n\n\u2014 ${COMPANY_PROFILE.name}`;
 }
