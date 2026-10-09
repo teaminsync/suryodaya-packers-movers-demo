@@ -47,6 +47,12 @@ describe("Company facts block", () => {
     const block = buildCompanyFactsBlock();
     expect(block).toContain("Never say or imply what a price includes");
   });
+
+  it("should contain tightened rule without example list", () => {
+    const block = buildCompanyFactsBlock();
+    expect(block).toContain("do not list or name any service");
+    expect(block).not.toContain("for example packing");
+  });
 });
 
 describe("Company facts in system prompt", () => {
@@ -149,5 +155,24 @@ describe("Company facts in system prompt", () => {
     expect(capturedSystemPrompt).not.toBeNull();
     expect(capturedSystemPrompt).toContain("CURRENT message changes");
     expect(capturedSystemPrompt).toContain("BALLPARK PRICING");
+  });
+
+  it("should include tightened price mention instruction", async () => {
+    const mockProvider = new MockProvider();
+    const router = AIRouter.getInstance();
+    (router as any).config = {
+      mode: "DEMO",
+      primary: mockProvider,
+      fallbacks: [],
+    };
+    (router as any).initialized = true;
+
+    await processConversationTurn("Actually it is a 3BHK", {
+      moveType: "intercity",
+      estimatedVolume: "2bhk",
+    });
+
+    expect(capturedSystemPrompt).not.toBeNull();
+    expect(capturedSystemPrompt).toContain("not even the earlier estimate");
   });
 });

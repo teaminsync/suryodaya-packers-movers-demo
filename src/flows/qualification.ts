@@ -67,7 +67,7 @@ export function buildConversationRequest(
       knownLeadInfo.estimatedVolume,
       knownLeadInfo.moveType
     );
-    ballparkInstruction = `\n\nBALLPARK PRICING: For this move (${knownLeadInfo.estimatedVolume} ${knownLeadInfo.moveType}), the approximate price range is ${ballparkRange}. If you mention pricing in your reply, you MUST use this exact figure - never invent or guess a different number. This is a ballpark only - an on-site survey gives the real quote. If the customer's CURRENT message changes the move type, home size or route, do NOT mention any price in this reply, because the figure above is for their previous details; say the estimate will be refreshed once the new details are confirmed and offer the free on-site survey.`;
+    ballparkInstruction = `\n\nBALLPARK PRICING: For this move (${knownLeadInfo.estimatedVolume} ${knownLeadInfo.moveType}), the approximate price range is ${ballparkRange}. If you mention pricing in your reply, you MUST use this exact figure - never invent or guess a different number. This is a ballpark only - an on-site survey gives the real quote. If the customer's CURRENT message changes the move type, home size or route, do NOT mention, repeat or refer to any price in this reply, not even the earlier estimate, because the figure above is for their previous details; say the estimate will be refreshed once the new details are confirmed and offer the free on-site survey.`;
   } else {
     ballparkInstruction = `\n\nBALLPARK PRICING: Not enough information yet to provide a price estimate. DO NOT mention any pricing figures in your reply. We need at least move type (local/intercity) and estimated volume (1bhk/2bhk/etc) before discussing price.`;
   }
