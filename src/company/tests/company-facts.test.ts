@@ -213,4 +213,21 @@ describe("Company facts in system prompt", () => {
     expect(capturedSystemPrompt).not.toBeNull();
     expect(capturedSystemPrompt).not.toContain("ALREADY KNOWN");
   });
+
+  it("should include SCHEDULING RULE in system prompt", async () => {
+    const mockProvider = new MockProvider();
+    const router = AIRouter.getInstance();
+    (router as any).config = {
+      mode: "DEMO",
+      primary: mockProvider,
+      fallbacks: [],
+    };
+    (router as any).initialized = true;
+
+    await processConversationTurn("Hi", {});
+
+    expect(capturedSystemPrompt).not.toBeNull();
+    expect(capturedSystemPrompt).toContain("SCHEDULING RULE");
+    expect(capturedSystemPrompt).toContain("sent automatically as a numbered list");
+  });
 });

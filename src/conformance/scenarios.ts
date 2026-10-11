@@ -14,6 +14,8 @@ export const HUMAN_HANDOFF = /talk to a human|speak (with|to) (our|the) team|con
 
 export const INCLUSION = /\b(includes?|including|inclusive of|covers?|covering)\b[^.?!]{0,60}\b(packing|loading|unloading|transport|insurance|gst|fuel|labou?r|materials?)\b/i;
 
+export const ASKS_SURVEY_DATE = /\b(preferred|suitable)\s+(date|time|day|slot)|\b(date|day)s?\s+(and|or|&)\s+times?\b|\bwhat\s+(date|time|day)\b|\bwhich\s+(date|time|day|slot)\b/i;
+
 export interface Scenario {
   id: string;
   title: string;
@@ -87,6 +89,7 @@ export const SCENARIOS: Scenario[] = [
       },
       specialItemsInclude: "piano",
       noPriceFigures: true,
+      forbidden: [ASKS_SURVEY_DATE],
     },
   },
   {
@@ -203,6 +206,7 @@ export const SCENARIOS: Scenario[] = [
     known: KNOWN_2BHK,
     expect: {
       wantsToBookSurvey: true,
+      forbidden: [ASKS_SURVEY_DATE],
     },
   },
   {
@@ -251,6 +255,7 @@ export const SCENARIOS: Scenario[] = [
         /\b(which|what|where)\b[^.?!]*\b(city|cities|moving from|destination|origin)\b[^.?!]*\?/i,
         /\b(let me know|tell me|share|could you|can you)\b[^.?!]*\b(city|cities|moving from|destination|origin)\b[^.?!]*\?/i,
         /\b(do you have|are there|any)\b[^.?!]*\b(special|fragile|piano|valuable)\b[^.?!]*\?/i,
+        ASKS_SURVEY_DATE,
       ],
     },
   },

@@ -111,6 +111,8 @@ Reply message guidelines:
 - Don't be pushy about booking - make it an option, not a demand
 - Be warm and helpful
 
+SCHEDULING RULE: Never ask the customer to propose, choose or confirm a date or time for the on-site survey, and never say you will arrange or confirm a specific time yourself. When the customer wants to book, the available survey times are sent automatically as a numbered list; simply say that you are sending the available times. (Asking when the move itself will take place is fine.)
+
 Set wantsToBookSurvey to true if the customer explicitly asks to schedule, book, or set up a survey/visit.
 Set wantsHuman to true if they ask to speak with a person, team member, or human.
 Set needsTeamFollowUp to true whenever your reply says or implies that you will confirm, check or find out something with the team or get back to the customer, or when the customer asked something you could not answer from the facts above. Otherwise set it to false.${contextNote}${ballparkInstruction}`,

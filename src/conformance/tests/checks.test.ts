@@ -3,7 +3,7 @@
  */
 
 import { evaluateScenario, findCurrencyAmounts, normalizeDashes } from "../checks.js";
-import { NOT_OFFER, SCENARIOS } from "../scenarios.js";
+import { NOT_OFFER, SCENARIOS, ASKS_SURVEY_DATE } from "../scenarios.js";
 import { turnResponseSchema } from "../../flows/qualification.js";
 import type { TurnResponse } from "../../flows/qualification.js";
 
@@ -93,6 +93,42 @@ describe("Conformance checks", () => {
 
   it("NOT_OFFER still rejects an affirmation about vehicles", () => {
     expect(NOT_OFFER.test("Yes, we can move your car as well")).toBe(false);
+  });
+
+  it("ASKS_SURVEY_DATE matches requests for a survey date and ignores the rest", () => {
+    expect(ASKS_SURVEY_DATE.test("Please let us know your preferred date and time, and we'll confirm the appointment.")).toBe(true);
+    expect(ASKS_SURVEY_DATE.test("Let us know a convenient date and time, and we'll arrange it for you.")).toBe(true);
+    expect(ASKS_SURVEY_DATE.test("Let us know if you'd like to schedule it at a convenient time.")).toBe(false);
+    expect(ASKS_SURVEY_DATE.test("Could you let us know when you'd like the move to take place?")).toBe(false);
+    expect(ASKS_SURVEY_DATE.test("Here are the available times, reply with a number.")).toBe(false);
+  });
+
+  it("scenario S10 reply that asks for a survey date fails forbidden", () => {
+    const scenario = SCENARIOS.find((s) => s.id === "S10")!;
+    
+    const turnResponse1: TurnResponse = {
+      extractedFields: {},
+      replyMessage: "Sure! We'll arrange a free on-site survey at a convenient time. Please let us know your preferred date and time, and we'll confirm the appointment.",
+      wantsToBookSurvey: true,
+      wantsHuman: false,
+      needsTeamFollowUp: false,
+    };
+
+    const results1 = evaluateScenario(scenario, turnResponse1);
+    const forbiddenCheck1 = results1.find((r) => r.name === "forbidden");
+    expect(forbiddenCheck1?.pass).toBe(false);
+
+    const turnResponse2: TurnResponse = {
+      extractedFields: {},
+      replyMessage: "Sure! I'm sending the available survey times now.",
+      wantsToBookSurvey: true,
+      wantsHuman: false,
+      needsTeamFollowUp: false,
+    };
+
+    const results2 = evaluateScenario(scenario, turnResponse2);
+    const forbiddenCheck2 = results2.find((r) => r.name === "forbidden");
+    expect(forbiddenCheck2?.pass).toBe(true);
   });
 
   it("scenario S04 with warehouse affirmation yields failing checks", () => {
