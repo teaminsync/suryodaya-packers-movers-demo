@@ -57,7 +57,7 @@ export function buildConversationRequest(
     .join(", ");
 
   const contextNote = knownContext
-    ? `\n\nKnown information about this lead from prior conversation:\n${knownContext}`
+    ? `\n\nKnown information about this lead from prior conversation:\n${knownContext}\n\nRULE FOR KNOWN INFORMATION: everything listed above is ALREADY KNOWN. Never ask the customer for any of it again, and never ask whether they have items that are already listed. Only ask about details that are NOT listed above.`
     : "";
 
   // Calculate ballpark if we have enough info
@@ -107,7 +107,7 @@ Reply message guidelines:
 - Write naturally, like continuing a conversation
 - Acknowledge what they just said
 - If a ballpark price is provided below, you may mention it naturally if appropriate for the conversation flow
-- If important details are missing, ask ONE natural next question
+- If important details are missing (anything not listed under Known information), ask ONE natural next question; if nothing important is missing, offer the free on-site survey as an option instead of asking a question
 - Don't be pushy about booking - make it an option, not a demand
 - Be warm and helpful
 

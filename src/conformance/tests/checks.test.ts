@@ -333,4 +333,38 @@ describe("Conformance checks", () => {
 
     expect(followupCheck?.pass).toBe(false);
   });
+
+  it("scenario S13 reply that re-asks cities and special items fails forbidden", () => {
+    const scenario = SCENARIOS.find((s) => s.id === "S13")!;
+    const turnResponse: TurnResponse = {
+      extractedFields: { estimatedVolume: "2bhk" },
+      replyMessage: "Sure, happy to help with your 2 BHK move! Could you let me know the city you\u2019re moving from and the destination city? Also, are there any special items like a piano or fragile pieces, and would you like us to handle packing for you?",
+      wantsToBookSurvey: false,
+      wantsHuman: false,
+      needsTeamFollowUp: false,
+    };
+
+    const results = evaluateScenario(scenario, turnResponse);
+    const forbiddenCheck = results.find((r) => r.name === "forbidden");
+
+    expect(forbiddenCheck?.pass).toBe(false);
+  });
+
+  it("scenario S13 reply that uses known details passes forbidden", () => {
+    const scenario = SCENARIOS.find((s) => s.id === "S13")!;
+    const turnResponse: TurnResponse = {
+      extractedFields: { estimatedVolume: "2bhk" },
+      replyMessage: "Got it, updating to a 2BHK for your move from Pune to Bengaluru. We\u2019ll refresh the estimate once the new details are confirmed. Would you like to book the free on-site survey?",
+      wantsToBookSurvey: false,
+      wantsHuman: false,
+      needsTeamFollowUp: false,
+    };
+
+    const results = evaluateScenario(scenario, turnResponse);
+    const forbiddenCheck = results.find((r) => r.name === "forbidden");
+    const fieldsAbsentCheck = results.find((r) => r.name === "fields_absent");
+
+    expect(forbiddenCheck?.pass).toBe(true);
+    expect(fieldsAbsentCheck?.pass).toBe(true);
+  });
 });

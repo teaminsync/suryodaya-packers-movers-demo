@@ -175,4 +175,42 @@ describe("Company facts in system prompt", () => {
     expect(capturedSystemPrompt).not.toBeNull();
     expect(capturedSystemPrompt).toContain("not even the earlier estimate");
   });
+
+  it("should include the known-information rule when lead details are known", async () => {
+    const mockProvider = new MockProvider();
+    const router = AIRouter.getInstance();
+    (router as any).config = {
+      mode: "DEMO",
+      primary: mockProvider,
+      fallbacks: [],
+    };
+    (router as any).initialized = true;
+
+    await processConversationTurn("Hi, I need to move a 2BHK", {
+      moveType: "intercity",
+      origin: "Pune",
+      destination: "Bengaluru",
+      estimatedVolume: "3bhk",
+    });
+
+    expect(capturedSystemPrompt).not.toBeNull();
+    expect(capturedSystemPrompt).toContain("ALREADY KNOWN");
+    expect(capturedSystemPrompt).toContain("Only ask about details that are NOT listed above");
+  });
+
+  it("should not include the known-information rule when nothing is known", async () => {
+    const mockProvider = new MockProvider();
+    const router = AIRouter.getInstance();
+    (router as any).config = {
+      mode: "DEMO",
+      primary: mockProvider,
+      fallbacks: [],
+    };
+    (router as any).initialized = true;
+
+    await processConversationTurn("Hi", {});
+
+    expect(capturedSystemPrompt).not.toBeNull();
+    expect(capturedSystemPrompt).not.toContain("ALREADY KNOWN");
+  });
 });

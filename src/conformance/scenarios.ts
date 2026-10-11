@@ -229,4 +229,29 @@ export const SCENARIOS: Scenario[] = [
       noInclusionClaims: true,
     },
   },
+  {
+    id: "S13",
+    title: "no_reask",
+    message: "Hi, I need to move a 2BHK",
+    known: {
+      moveType: "intercity",
+      origin: "Pune",
+      destination: "Bengaluru",
+      estimatedVolume: "3bhk",
+      hasSpecialItems: true,
+      specialItems: ["piano"],
+      requiresPacking: false,
+    },
+    expect: {
+      fields: { estimatedVolume: "2bhk" },
+      fieldsAbsent: ["moveType", "origin", "destination", "hasSpecialItems", "specialItems"],
+      noPriceFigures: true,
+      noInclusionClaims: true,
+      forbidden: [
+        /\b(which|what|where)\b[^.?!]*\b(city|cities|moving from|destination|origin)\b[^.?!]*\?/i,
+        /\b(let me know|tell me|share|could you|can you)\b[^.?!]*\b(city|cities|moving from|destination|origin)\b[^.?!]*\?/i,
+        /\b(do you have|are there|any)\b[^.?!]*\b(special|fragile|piano|valuable)\b[^.?!]*\?/i,
+      ],
+    },
+  },
 ];
