@@ -142,6 +142,35 @@ async function initSchema(): Promise<void> {
     ALTER TABLE leads ADD COLUMN IF NOT EXISTS human_takeover BOOLEAN NOT NULL DEFAULT FALSE
   `;
 
+  // Lock down all tables to server-only access on Supabase (anon/authenticated roles
+  // get full table rights by default). Leaves only SELECT on messages for authenticated
+  // users, which the dashboard Realtime subscription needs.
+  await sql`
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon')
+     AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    ALTER TABLE leads ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE processed_messages ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE booking_offers ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE media_captures ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages FROM anon;
+    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages FROM authenticated;
+    GRANT SELECT ON TABLE messages TO authenticated;
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_policies
+      WHERE schemaname = 'public' AND tablename = 'messages'
+        AND cmd IN ('SELECT', 'ALL') AND 'authenticated' = ANY (roles)
+    ) THEN
+      CREATE POLICY messages_authenticated_read ON messages FOR SELECT TO authenticated USING (true);
+    END IF;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated;
+  END IF;
+END
+$$;
+  `;
+
   console.log("[Database] Schema initialized");
 }
 
