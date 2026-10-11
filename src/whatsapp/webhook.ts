@@ -5,6 +5,7 @@
 import { Request, Response } from "express";
 import { WhatsAppWebhookPayload } from "./types.js";
 import { formatRoomLabel } from "../utils/text.js";
+import { verifyMetaSignature } from "./signature.js";
 
 /**
  * GET /webhook - Meta verification handshake
@@ -40,6 +41,19 @@ export function verifyWebhook(req: Request, res: Response): void {
  * POST /webhook - Inbound message receipt
  */
 export function handleWebhook(req: Request, res: Response): void {
+  const secret = process.env.WHATSAPP_APP_SECRET;
+  const rawBody = (req as unknown as { rawBody?: Buffer }).rawBody;
+  const signature = req.header("X-Hub-Signature-256");
+
+  if (!secret || !rawBody || !verifyMetaSignature(rawBody, signature, secret)) {
+    console.warn("[Webhook] Rejected POST: missing or invalid signature", {
+      hasSignatureHeader: !!signature,
+      hasRawBody: !!rawBody,
+    });
+    res.sendStatus(401);
+    return;
+  }
+
   const payload = req.body as WhatsAppWebhookPayload;
 
   // Log full raw inbound payload
@@ -239,7 +253,7 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
             }
 
             if (interactionId === "update_details") {
-              const message = "Sure — what would you like to update?";
+              const message = "Sure - what would you like to update?";
               await whatsappClient.sendMessage(whatsappNumber, message);
               
               // Log outbound update prompt
@@ -416,7 +430,7 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
                 : "this room";
               const itemList = analysisResult.data.items
                 .slice(0, 5)
-                .map((item) => `• ${item.name} (${item.quantity})`)
+                .map((item) => `\u2022 ${item.name} (${item.quantity})`)
                 .join("\n");
               const moreItems = analysisResult.data.items.length > 5 
                 ? `\n...and ${analysisResult.data.items.length - 5} more items` 

@@ -12,15 +12,25 @@ import internalRoutes from "./routes/internal.js";
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+if (!process.env.WHATSAPP_APP_SECRET) {
+  throw new Error("WHATSAPP_APP_SECRET is required to verify WhatsApp webhook signatures");
+}
+
 // Initialize database
 await initializeDatabase();
 
 // Initialize AI router
 await aiRouter.initialize();
-console.log("✅ AI Router initialized");
+console.log("\u2705 AI Router initialized");
 
 // Parse JSON bodies
-app.use(express.json());
+app.use(
+  express.json({
+    verify: (req, _res, buf) => {
+      (req as unknown as { rawBody?: Buffer }).rawBody = buf;
+    },
+  })
+);
 
 // Health check
 app.get("/health", (_req, res) => {
@@ -36,7 +46,7 @@ app.use("/internal", internalRoutes);
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`✅ Server listening on port ${PORT}`);
+  console.log(`\u2705 Server listening on port ${PORT}`);
   console.log(`Webhook URL: http://localhost:${PORT}/webhook`);
   console.log(`Health check: http://localhost:${PORT}/health`);
 });
