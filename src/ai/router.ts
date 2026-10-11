@@ -16,6 +16,7 @@ interface RouterConfig {
   mode: AIMode;
   primary: AIProviderAdapter;
   fallbacks: AIProviderAdapter[];
+  mediaChain?: AIProviderAdapter[];
 }
 
 /**
@@ -45,25 +46,9 @@ export class AIRouter {
     }
 
     const forceProvider = process.env.AI_FORCE_PROVIDER;
-
-    // Manual override path (Gemini only - for cost control during dev)
-    if (forceProvider === "gemini") {
+    if (forceProvider) {
       console.warn(
-        `[AI Router] AI_FORCE_PROVIDER=gemini - forcing Gemini even if Anthropic key present`
-      );
-      this.config = {
-        mode: "DEMO",
-        primary: new GeminiAdapter(),
-        fallbacks: [],
-      };
-      console.info("🔧 AI mode: FORCED DEMO (Gemini primary, no fallback)");
-      this.initialized = true;
-      return;
-    }
-
-    if (forceProvider && forceProvider !== "gemini") {
-      throw new Error(
-        `AI_FORCE_PROVIDER must be "gemini" or unset. Got: "${forceProvider}"`
+        `[AI Router] AI_FORCE_PROVIDER is no longer supported and is ignored (was: "${forceProvider}")`
       );
     }
 
@@ -78,6 +63,9 @@ export class AIRouter {
       );
     }
 
+    // Reuse one Gemini instance
+    const geminiAdapter = new GeminiAdapter();
+
     // Check if we should try production mode
     if (anthropicKey) {
       try {
@@ -85,23 +73,16 @@ export class AIRouter {
         const isValid = await claudeAdapter.validateKey();
 
         if (isValid) {
-          // Production mode: Claude primary, Gemini fallback
+          // Production mode: Claude primary, Gemini fallback for text; Gemini for media
           this.config = {
             mode: "PRODUCTION",
             primary: claudeAdapter,
-            fallbacks: [new GeminiAdapter()],
+            fallbacks: [geminiAdapter],
+            mediaChain: [geminiAdapter],
           };
           console.info(
-            "🚀 AI mode: PRODUCTION (Anthropic key validated, Claude primary / Gemini fallback)"
+            "AI profile: PRODUCTION | text: claude -> gemini | media: gemini"
           );
-
-          // Add Groq as last-resort fallback if configured
-          if (process.env.GROQ_API_KEY) {
-            this.config.fallbacks.push(new GroqAdapter());
-            console.info(
-              `🛟 Groq fallback enabled (model: ${process.env.GROQ_MODEL || "openai/gpt-oss-120b"})`
-            );
-          }
 
           this.initialized = true;
           return;
@@ -118,21 +99,26 @@ export class AIRouter {
       }
     }
 
-    // Demo mode: Gemini primary, no fallback
-    this.config = {
-      mode: "DEMO",
-      primary: new GeminiAdapter(),
-      fallbacks: [],
-    };
-    console.info(
-      "🎮 AI mode: DEMO (no valid Anthropic key found, Gemini primary, no fallback configured)"
-    );
-
-    // Add Groq as last-resort fallback if configured
+    // Demo mode: Groq primary (if available), otherwise Gemini; Gemini for media
     if (process.env.GROQ_API_KEY) {
-      this.config.fallbacks.push(new GroqAdapter());
+      this.config = {
+        mode: "DEMO",
+        primary: new GroqAdapter(),
+        fallbacks: [geminiAdapter],
+        mediaChain: [geminiAdapter],
+      };
       console.info(
-        `🛟 Groq fallback enabled (model: ${process.env.GROQ_MODEL || "openai/gpt-oss-120b"})`
+        "AI profile: DEMO | text: groq -> gemini | media: gemini"
+      );
+    } else {
+      this.config = {
+        mode: "DEMO",
+        primary: geminiAdapter,
+        fallbacks: [],
+        mediaChain: [geminiAdapter],
+      };
+      console.info(
+        "AI profile: DEMO | text: gemini | media: gemini"
       );
     }
 
@@ -152,10 +138,16 @@ export class AIRouter {
     }
 
     const startTime = Date.now();
-    const { mode, primary, fallbacks } = this.config;
+    const { mode, primary, fallbacks, mediaChain } = this.config;
+
+    // Check if this is a media request
+    const hasMedia = (request.images?.length ?? 0) > 0 || !!request.video;
 
     // Build provider chain
-    const chain = [primary, ...fallbacks];
+    const chain = hasMedia && mediaChain ? mediaChain : [primary, ...fallbacks];
+
+    // Determine baseline for failover calculation
+    const baseline = hasMedia && mediaChain ? mediaChain[0] : primary;
 
     // Determine required capabilities
     const required = {
@@ -206,7 +198,7 @@ export class AIRouter {
       try {
         const result = await this.executeProvider(provider, request);
         const latencyMs = Date.now() - startTime;
-        const wasFailover = provider !== primary;
+        const wasFailover = provider !== baseline;
 
         this.logCallResult({
           taskName: request.taskName,
@@ -229,7 +221,7 @@ export class AIRouter {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
 
-        const label = provider === primary ? "Primary provider" : "Fallback provider";
+        const label = provider === baseline ? "Primary provider" : "Fallback provider";
         console.warn(`[AI Router] ${label} (${provider.name}) failed for task "${request.taskName}":`, errorMessage);
 
         failures.push({
@@ -246,7 +238,7 @@ export class AIRouter {
       taskName: request.taskName,
       mode,
       providerUsed: failures[failures.length - 1].provider,
-      wasFailover: failures[failures.length - 1].provider !== primary.name,
+      wasFailover: failures[failures.length - 1].provider !== baseline.name,
       latencyMs,
       success: false,
       errorReason: failures[failures.length - 1].error.message,

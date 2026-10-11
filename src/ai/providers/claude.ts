@@ -66,7 +66,7 @@ export class ClaudeAdapter implements AIProviderAdapter {
 
   constructor() {
     this.apiKey = process.env.ANTHROPIC_API_KEY || "";
-    this.model = process.env.CLAUDE_MODEL || "claude-sonnet-5";
+    this.model = process.env.CLAUDE_MODEL || "claude-sonnet-5-5";
 
     if (!this.apiKey) {
       throw new Error("ANTHROPIC_API_KEY is required for Claude adapter");

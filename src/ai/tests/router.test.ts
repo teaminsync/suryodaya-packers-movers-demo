@@ -259,6 +259,126 @@ describe("AIRouter", () => {
   });
 });
 
+describe("AIRouter media chain", () => {
+  const testSchema = z.object({
+    success: z.boolean(),
+  });
+
+  beforeEach(() => {
+    AIRouter.getInstance().reset();
+  });
+
+  it("image request with claude primary and gemini mediaChain should serve via gemini with wasFailover false", async () => {
+    const router = AIRouter.getInstance();
+    const claudeLikeMock = new MockProvider("claude", { images: true, video: false });
+    const geminiMock = new MockProvider("gemini", { images: true, video: true }, false, { success: true });
+
+    (router as any).config = {
+      mode: "PRODUCTION",
+      primary: claudeLikeMock,
+      fallbacks: [geminiMock],
+      mediaChain: [geminiMock],
+    };
+    (router as any).initialized = true;
+
+    const imageRequest: AIRequest<typeof testSchema> = {
+      systemPrompt: "Test",
+      userPrompt: "Test",
+      responseSchema: testSchema,
+      taskName: "image_test",
+      images: [{ mimeType: "image/png", base64Data: "test" }],
+    };
+
+    const response = await router.call(imageRequest);
+    expect(response.providerUsed).toBe("gemini");
+    expect(response.wasFailover).toBe(false);
+    expect(claudeLikeMock.callCount).toBe(0);
+    expect(geminiMock.callCount).toBe(1);
+  });
+
+  it("video request with claude primary and gemini mediaChain should serve via gemini with wasFailover false", async () => {
+    const router = AIRouter.getInstance();
+    const claudeLikeMock = new MockProvider("claude", { images: true, video: false });
+    const geminiMock = new MockProvider("gemini", { images: true, video: true }, false, { success: true });
+
+    (router as any).config = {
+      mode: "PRODUCTION",
+      primary: claudeLikeMock,
+      fallbacks: [geminiMock],
+      mediaChain: [geminiMock],
+    };
+    (router as any).initialized = true;
+
+    const videoRequest: AIRequest<typeof testSchema> = {
+      systemPrompt: "Test",
+      userPrompt: "Test",
+      responseSchema: testSchema,
+      taskName: "video_test",
+      video: { mimeType: "video/mp4", base64Data: "test" },
+    };
+
+    const response = await router.call(videoRequest);
+    expect(response.providerUsed).toBe("gemini");
+    expect(response.wasFailover).toBe(false);
+    expect(claudeLikeMock.callCount).toBe(0);
+    expect(geminiMock.callCount).toBe(1);
+  });
+
+  it("text request with failing groq primary and gemini fallback should serve via gemini with wasFailover true", async () => {
+    const router = AIRouter.getInstance();
+    const groqMock = new MockProvider("groq", { images: false, video: false }, true);
+    const geminiMock = new MockProvider("gemini", { images: true, video: true }, false, { success: true });
+
+    (router as any).config = {
+      mode: "DEMO",
+      primary: groqMock,
+      fallbacks: [geminiMock],
+      mediaChain: [geminiMock],
+    };
+    (router as any).initialized = true;
+
+    const textRequest: AIRequest<typeof testSchema> = {
+      systemPrompt: "Test",
+      userPrompt: "Test",
+      responseSchema: testSchema,
+      taskName: "text_test",
+    };
+
+    const response = await router.call(textRequest);
+    expect(response.providerUsed).toBe("gemini");
+    expect(response.wasFailover).toBe(true);
+    expect(groqMock.callCount).toBe(1);
+    expect(geminiMock.callCount).toBe(1);
+  });
+
+  it("image request where only media provider fails should rethrow original error", async () => {
+    const router = AIRouter.getInstance();
+    const groqMock = new MockProvider("groq", { images: false, video: false });
+    const failingGeminiMock = new MockProvider("gemini", { images: true, video: true }, true);
+
+    (router as any).config = {
+      mode: "DEMO",
+      primary: groqMock,
+      fallbacks: [],
+      mediaChain: [failingGeminiMock],
+    };
+    (router as any).initialized = true;
+
+    const imageRequest: AIRequest<typeof testSchema> = {
+      systemPrompt: "Test",
+      userPrompt: "Test",
+      responseSchema: testSchema,
+      taskName: "image_fail_test",
+      images: [{ mimeType: "image/png", base64Data: "test" }],
+    };
+
+    await expect(router.call(imageRequest)).rejects.toThrow("Mock gemini failure");
+    await expect(router.call(imageRequest)).rejects.toBeInstanceOf(AIProviderError);
+    expect(failingGeminiMock.callCount).toBe(2);
+    expect(groqMock.callCount).toBe(0);
+  });
+});
+
 describe("AIRouter initialization with Groq", () => {
   let savedGeminiKey: string | undefined;
   let savedAnthropicKey: string | undefined;
@@ -298,7 +418,7 @@ describe("AIRouter initialization with Groq", () => {
     }
   });
 
-  it("should add Groq fallback when GROQ_API_KEY is set", async () => {
+  it("DEMO with GROQ_API_KEY set should have groq primary and gemini fallback", async () => {
     process.env.GEMINI_API_KEY = "test-gemini";
     delete process.env.ANTHROPIC_API_KEY;
     delete process.env.AI_FORCE_PROVIDER;
@@ -309,11 +429,11 @@ describe("AIRouter initialization with Groq", () => {
     await router.initialize();
 
     const config = router.getConfig();
-    expect(config?.primary.name).toBe("gemini");
-    expect(config?.fallbacks.map((f) => f.name)).toEqual(["groq"]);
+    expect(config?.primary.name).toBe("groq");
+    expect(config?.fallbacks.map((f) => f.name)).toEqual(["gemini"]);
   });
 
-  it("should not add Groq fallback when GROQ_API_KEY is unset", async () => {
+  it("DEMO without GROQ_API_KEY should have gemini primary and no fallbacks", async () => {
     process.env.GEMINI_API_KEY = "test-gemini";
     delete process.env.ANTHROPIC_API_KEY;
     delete process.env.AI_FORCE_PROVIDER;
@@ -328,7 +448,61 @@ describe("AIRouter initialization with Groq", () => {
     expect(config?.fallbacks).toEqual([]);
   });
 
-  it("should not add Groq when AI_FORCE_PROVIDER is gemini", async () => {
+  it("DEMO with GROQ_API_KEY should have mediaChain with gemini", async () => {
+    process.env.GEMINI_API_KEY = "test-gemini";
+    delete process.env.ANTHROPIC_API_KEY;
+    process.env.GROQ_API_KEY = "test-groq";
+
+    const router = AIRouter.getInstance();
+    router.reset();
+    await router.initialize();
+
+    const config = router.getConfig();
+    expect(config?.mediaChain?.map((p) => p.name)).toEqual(["gemini"]);
+  });
+
+  it("DEMO without GROQ_API_KEY should have mediaChain with gemini", async () => {
+    process.env.GEMINI_API_KEY = "test-gemini";
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.GROQ_API_KEY;
+
+    const router = AIRouter.getInstance();
+    router.reset();
+    await router.initialize();
+
+    const config = router.getConfig();
+    expect(config?.mediaChain?.map((p) => p.name)).toEqual(["gemini"]);
+  });
+
+  it("PRODUCTION should have claude primary, gemini fallback, gemini media, no groq", async () => {
+    const originalFetch = globalThis.fetch;
+
+    // Stub fetch for Claude validation
+    globalThis.fetch = async () => {
+      return new Response(JSON.stringify({}), {
+        status: 200,
+        statusText: "OK",
+      });
+    };
+
+    process.env.GEMINI_API_KEY = "test-gemini";
+    process.env.ANTHROPIC_API_KEY = "test-anthropic";
+    process.env.GROQ_API_KEY = "test-groq";
+
+    const router = AIRouter.getInstance();
+    router.reset();
+    await router.initialize();
+
+    globalThis.fetch = originalFetch;
+
+    const config = router.getConfig();
+    expect(config?.mode).toBe("PRODUCTION");
+    expect(config?.primary.name).toBe("claude");
+    expect(config?.fallbacks.map((f) => f.name)).toEqual(["gemini"]);
+    expect(config?.mediaChain?.map((p) => p.name)).toEqual(["gemini"]);
+  });
+
+  it("AI_FORCE_PROVIDER set to gemini should not force anything (profile chosen normally)", async () => {
     process.env.GEMINI_API_KEY = "test-gemini";
     delete process.env.ANTHROPIC_API_KEY;
     process.env.AI_FORCE_PROVIDER = "gemini";
@@ -339,8 +513,8 @@ describe("AIRouter initialization with Groq", () => {
     await router.initialize();
 
     const config = router.getConfig();
-    expect(config?.primary.name).toBe("gemini");
-    expect(config?.fallbacks).toEqual([]);
+    expect(config?.primary.name).toBe("groq");
+    expect(config?.fallbacks.map((f) => f.name)).toEqual(["gemini"]);
   });
 });
 
