@@ -71,6 +71,30 @@ describe("Conformance checks", () => {
     expect(NOT_OFFER.test("Yes, we offer storage")).toBe(false);
   });
 
+  it("NOT_OFFER and S06 accept a plain refusal to transport vehicles", () => {
+    expect(NOT_OFFER.test("We don't transport cars. If you'd like, I can connect you with our team to discuss alternative options.")).toBe(true);
+
+    const scenario = SCENARIOS.find((s) => s.id === "S06")!;
+    const turnResponse: TurnResponse = {
+      extractedFields: {},
+      replyMessage: "We don't transport cars. If you'd like, I can connect you with our team to discuss alternative options.",
+      wantsToBookSurvey: false,
+      wantsHuman: false,
+      needsTeamFollowUp: false,
+    };
+
+    const results = evaluateScenario(scenario, turnResponse);
+    const requiredCheck = results.find((r) => r.name === "required_any");
+    const forbiddenCheck = results.find((r) => r.name === "forbidden");
+
+    expect(requiredCheck?.pass).toBe(true);
+    expect(forbiddenCheck?.pass).toBe(true);
+  });
+
+  it("NOT_OFFER still rejects an affirmation about vehicles", () => {
+    expect(NOT_OFFER.test("Yes, we can move your car as well")).toBe(false);
+  });
+
   it("scenario S04 with warehouse affirmation yields failing checks", () => {
     const scenario = SCENARIOS.find((s) => s.id === "S04")!;
     const turnResponse: TurnResponse = {

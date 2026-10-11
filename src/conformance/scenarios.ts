@@ -6,7 +6,7 @@ import { getBallparkRange } from "../company/profile.js";
 import type { LeadInfo } from "../flows/qualification.js";
 import { PROMISES_TEAM_FOLLOWUP } from "../flows/followup.js";
 
-export const NOT_OFFER = /(do not|don't|doesn't|does not|cannot|can't|can not|unable to|not able to)\s+(currently\s+)?(offer|provide|handle|do|support)|(isn't|is not|aren't|are not)\s+(something|a service|one of)/i;
+export const NOT_OFFER = /(do not|don't|doesn't|does not|cannot|can't|can not|unable to|not able to)\s+(currently\s+)?(offer|provide|handle|do|support|transport|ship|move|carry)|(isn't|is not|aren't|are not)\s+(something|a service|one of)/i;
 
 export const CONFIRM_WITH_TEAM = PROMISES_TEAM_FOLLOWUP;
 
