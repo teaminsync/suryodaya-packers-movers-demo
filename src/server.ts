@@ -10,6 +10,7 @@ import { initializeDatabase } from "./leads/db.js";
 import internalRoutes from "./routes/internal.js";
 
 const app = express();
+app.disable("x-powered-by");
 const PORT = process.env.PORT || 3000;
 
 if (!process.env.WHATSAPP_APP_SECRET) {
@@ -43,6 +44,19 @@ app.post("/webhook", handleWebhook);
 
 // Internal API routes
 app.use("/internal", internalRoutes);
+
+// Error handler (must be after all routes)
+app.use((err: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const rawStatus = (err as { status?: number } | null)?.status;
+  const status = typeof rawStatus === "number" && rawStatus >= 400 && rawStatus < 500 ? 400 : 500;
+  console.error("[Server] Request error:", {
+    method: req.method,
+    path: req.path,
+    status,
+    message: err instanceof Error ? err.message : String(err),
+  });
+  res.status(status).json({ error: status === 400 ? "bad request" : "internal error" });
+});
 
 // Start server
 app.listen(PORT, () => {
