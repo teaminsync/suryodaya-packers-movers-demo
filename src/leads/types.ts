@@ -27,6 +27,10 @@ export interface Lead {
   escalated_at: string | null;
   human_takeover: boolean;
   raw_enquiry_text: string | null;
+  contact_id: string | null;
+  source: string | null;
+  closed_at: string | null;
+  closed_reason: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -49,4 +53,44 @@ export interface BookingOffer {
 export interface SlotOption {
   label: string;
   datetime: string; // ISO 8601
+}
+
+export interface Contact {
+  id: string;
+  phone_e164: string | null;
+  display_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContactIdentity {
+  id: string;
+  contact_id: string;
+  channel: string;
+  external_id: string;
+  created_at: string;
+}
+
+export interface Touchpoint {
+  id: string;
+  lead_id: string;
+  contact_id: string;
+  source: string;
+  external_ref: string | null;
+  raw_payload: string | null;
+  received_at: string;
+  created_at: string;
+}
+
+export interface Consent {
+  id: string;
+  contact_id: string;
+  channel: string;
+  scope: string;
+  status: string;
+  source: string;
+  wording: string | null;
+  evidence_ref: string | null;
+  captured_at: string;
+  created_at: string;
 }

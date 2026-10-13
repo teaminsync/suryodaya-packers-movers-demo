@@ -142,6 +142,100 @@ async function initSchema(): Promise<void> {
     ALTER TABLE leads ADD COLUMN IF NOT EXISTS human_takeover BOOLEAN NOT NULL DEFAULT FALSE
   `;
 
+  // New contact management tables
+  await sql`
+    CREATE TABLE IF NOT EXISTS contacts (
+      id TEXT PRIMARY KEY,
+      phone_e164 TEXT UNIQUE,
+      display_name TEXT,
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS contact_identities (
+      id TEXT PRIMARY KEY,
+      contact_id TEXT NOT NULL REFERENCES contacts(id),
+      channel TEXT NOT NULL,
+      external_id TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL,
+      UNIQUE (channel, external_id)
+    )
+  `;
+
+  await sql`
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS contact_id TEXT REFERENCES contacts(id)
+  `;
+
+  await sql`
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS source TEXT
+  `;
+
+  await sql`
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ
+  `;
+
+  await sql`
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS closed_reason TEXT
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS touchpoints (
+      id TEXT PRIMARY KEY,
+      lead_id TEXT NOT NULL REFERENCES leads(id),
+      contact_id TEXT NOT NULL REFERENCES contacts(id),
+      source TEXT NOT NULL,
+      external_ref TEXT,
+      raw_payload TEXT,
+      received_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS consents (
+      id TEXT PRIMARY KEY,
+      contact_id TEXT NOT NULL REFERENCES contacts(id),
+      channel TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      status TEXT NOT NULL,
+      source TEXT NOT NULL,
+      wording TEXT,
+      evidence_ref TEXT,
+      captured_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL
+    )
+  `;
+
+  await sql`
+    ALTER TABLE messages ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'whatsapp'
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_leads_contact_id ON leads(contact_id)
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_contact_identities_contact_id ON contact_identities(contact_id)
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_touchpoints_lead_id ON touchpoints(lead_id)
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_touchpoints_contact_id ON touchpoints(contact_id)
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_consents_contact_channel ON consents(contact_id, channel)
+  `;
+
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_touchpoints_source_ref ON touchpoints(source, external_ref) WHERE external_ref IS NOT NULL
+  `;
+
   // Lock down all tables to server-only access on Supabase (anon/authenticated roles
   // get full table rights by default). Leaves only SELECT on messages for authenticated
   // users, which the dashboard Realtime subscription needs.
@@ -155,8 +249,12 @@ BEGIN
     ALTER TABLE booking_offers ENABLE ROW LEVEL SECURITY;
     ALTER TABLE media_captures ENABLE ROW LEVEL SECURITY;
     ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
-    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages FROM anon;
-    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages FROM authenticated;
+    ALTER TABLE contacts ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE contact_identities ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE touchpoints ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE consents ENABLE ROW LEVEL SECURITY;
+    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents FROM anon;
+    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents FROM authenticated;
     GRANT SELECT ON TABLE messages TO authenticated;
     IF NOT EXISTS (
       SELECT 1 FROM pg_policies
