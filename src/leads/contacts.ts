@@ -95,3 +95,32 @@ export async function recordTouchpoint(params: {
     return true;
   }
 }
+
+export async function createContactWithoutPhone(
+  displayName: string | null
+): Promise<Contact> {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+
+  const result = await sql<Contact[]>`
+    INSERT INTO contacts (id, phone_e164, display_name, created_at, updated_at)
+    VALUES (${id}, NULL, ${displayName}, ${now}, ${now})
+    RETURNING *
+  `;
+
+  return result[0];
+}
+
+export async function setDisplayNameIfMissing(
+  contactId: string,
+  displayName: string
+): Promise<void> {
+  const now = new Date().toISOString();
+
+  await sql`
+    UPDATE contacts
+    SET display_name = COALESCE(display_name, ${displayName}),
+        updated_at = ${now}
+    WHERE id = ${contactId}
+  `;
+}

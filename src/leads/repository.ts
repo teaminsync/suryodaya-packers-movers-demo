@@ -56,16 +56,17 @@ export async function findActiveLead(
 export async function createLead(
   whatsappNumber: string,
   contactName: string | null,
-  rawEnquiryText: string
+  rawEnquiryText: string,
+  options?: { contactId?: string | null; source?: string | null }
 ): Promise<Lead> {
   const id = randomUUID();
   const now = new Date().toISOString();
 
   const result = await sql<Lead[]>`
     INSERT INTO leads (
-      id, whatsapp_number, contact_name, status, raw_enquiry_text, created_at, updated_at
+      id, whatsapp_number, contact_name, status, raw_enquiry_text, contact_id, source, created_at, updated_at
     ) VALUES (
-      ${id}, ${whatsappNumber}, ${contactName}, 'new', ${rawEnquiryText}, ${now}, ${now}
+      ${id}, ${whatsappNumber}, ${contactName}, 'new', ${rawEnquiryText}, ${options?.contactId ?? null}, ${options?.source ?? null}, ${now}, ${now}
     )
     RETURNING *
   `;

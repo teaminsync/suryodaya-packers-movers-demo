@@ -76,10 +76,11 @@ export function handleWebhook(req: Request, res: Response): void {
  */
 async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
   // Lazy imports to avoid circular dependency issues
-  const { isMessageProcessed, markMessageProcessed, findActiveLead, createLead, mergeLeadFields, setLeadStatus, setLeadEscalated, findOpenBookingOffer, createBookingOffer, recordSlotSelection, createMessage } = await import("../leads/repository.js");
+  const { isMessageProcessed, markMessageProcessed, mergeLeadFields, setLeadStatus, setLeadEscalated, findOpenBookingOffer, createBookingOffer, recordSlotSelection, createMessage } = await import("../leads/repository.js");
   const { processConversationTurn } = await import("../flows/qualification.js");
   const { promisesTeamFollowUp } = await import("../flows/followup.js");
   const { generateSlotOptions, parseSlotSelection, buildConfirmationMessage } = await import("../flows/booking.js");
+  const { shouldOfferSurveySlots } = await import("../flows/slot-offer-policy.js");
   const { getBallparkRange } = await import("../company/profile.js");
   const { whatsappClient } = await import("./client.js");
 
@@ -127,14 +128,27 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
 
         try {
           // Step 2: Load or create lead
-          let lead = await findActiveLead(whatsappNumber);
-          
-          if (!lead) {
-            console.log("[Webhook] Creating new lead for:", whatsappNumber);
-            lead = await createLead(whatsappNumber, contactName, message.text?.body || "[interactive]");
-          } else {
-            console.log("[Webhook] Found existing lead:", lead.id, "status:", lead.status);
-          }
+          const { resolveEnquiry } = await import("../leads/intake.js");
+          const { intakeDeps } = await import("../leads/intake-db.js");
+          const resolved = await resolveEnquiry(
+            {
+              channel: "whatsapp",
+              externalId: whatsappNumber,
+              contactName,
+              firstMessageText: message.text?.body || "[interactive]",
+              externalRef: wamid,
+              now: new Date(),
+            },
+            intakeDeps
+          );
+          const lead = resolved.lead;
+          console.log("[Webhook] Enquiry resolved:", {
+            leadId: lead.id,
+            contactId: resolved.contact.id,
+            createdEnquiry: resolved.createdEnquiry,
+            reason: resolved.reason,
+            status: lead.status,
+          });
 
           // Log inbound text messages up front (single place)
           if (message.type === "text" && message.text?.body) {
@@ -594,7 +608,12 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
             });
 
             // Handle wants-to-book trigger
-            if (turnResult.data.wantsToBookSurvey && lead.status !== "booking_offered" && lead.status !== "booked") {
+            const openOfferForSlots = turnResult.data.wantsToBookSurvey ? await findOpenBookingOffer(lead.id) : undefined;
+            const offerSlotsNow = turnResult.data.wantsToBookSurvey && shouldOfferSurveySlots({ status: lead.status, openOffer: openOfferForSlots, now: new Date() });
+            if (turnResult.data.wantsToBookSurvey && !offerSlotsNow) {
+              console.log("[Webhook] Survey slots not re-sent: a fresh offer is already open", { leadId: lead.id });
+            }
+            if (offerSlotsNow) {
               const slots = generateSlotOptions();
               const slotMessage = `Great! Here are available survey times:\n\n${slots.map((s, i) => `${i + 1}. ${s.label}`).join("\n")}\n\nReply with the number of your preferred time.`;
               
