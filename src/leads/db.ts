@@ -236,6 +236,16 @@ async function initSchema(): Promise<void> {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_touchpoints_source_ref ON touchpoints(source, external_ref) WHERE external_ref IS NOT NULL
   `;
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS intake_rejects (
+      id TEXT PRIMARY KEY,
+      source TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      raw_payload TEXT,
+      created_at TIMESTAMPTZ NOT NULL
+    )
+  `;
+
   // Lock down all tables to server-only access on Supabase (anon/authenticated roles
   // get full table rights by default). Leaves only SELECT on messages for authenticated
   // users, which the dashboard Realtime subscription needs.
@@ -253,8 +263,9 @@ BEGIN
     ALTER TABLE contact_identities ENABLE ROW LEVEL SECURITY;
     ALTER TABLE touchpoints ENABLE ROW LEVEL SECURITY;
     ALTER TABLE consents ENABLE ROW LEVEL SECURITY;
-    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents FROM anon;
-    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents FROM authenticated;
+    ALTER TABLE intake_rejects ENABLE ROW LEVEL SECURITY;
+    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents, intake_rejects FROM anon;
+    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents, intake_rejects FROM authenticated;
     GRANT SELECT ON TABLE messages TO authenticated;
     IF NOT EXISTS (
       SELECT 1 FROM pg_policies

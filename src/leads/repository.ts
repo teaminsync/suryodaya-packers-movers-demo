@@ -348,6 +348,7 @@ export async function createMessage(params: {
   messageType: "text" | "image" | "video" | "interactive" | "list";
   body: string | null;
   mediaCaptureId?: string | null;
+  channel?: string;
 }): Promise<void> {
   const id = randomUUID();
   const now = new Date().toISOString();
@@ -355,11 +356,11 @@ export async function createMessage(params: {
   await sql`
     INSERT INTO messages (
       id, lead_id, wamid, direction, sender_type, message_type, body,
-      media_capture_id, created_at
+      media_capture_id, channel, created_at
     ) VALUES (
       ${id}, ${params.leadId}, ${params.wamid}, ${params.direction},
       ${params.senderType}, ${params.messageType}, ${params.body},
-      ${params.mediaCaptureId || null}, ${now}
+      ${params.mediaCaptureId || null}, ${params.channel ?? "whatsapp"}, ${now}
     )
     ON CONFLICT DO NOTHING
   `;
