@@ -8,6 +8,7 @@ import { verifyWebhook, handleWebhook } from "./whatsapp/webhook.js";
 import { aiRouter } from "./ai/router.js";
 import { initializeDatabase } from "./leads/db.js";
 import internalRoutes from "./routes/internal.js";
+import intakeRoutes from "./routes/intake.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -15,6 +16,12 @@ const PORT = process.env.PORT || 3000;
 
 if (!process.env.WHATSAPP_APP_SECRET) {
   throw new Error("WHATSAPP_APP_SECRET is required to verify WhatsApp webhook signatures");
+}
+
+if (!process.env.INDIAMART_PUSH_TOKEN) {
+  console.warn("[Intake] INDIAMART_PUSH_TOKEN is not set: the IndiaMART intake endpoint is disabled (every request gets 404)");
+} else if (process.env.INDIAMART_PUSH_TOKEN.length < 32) {
+  console.warn("[Intake] INDIAMART_PUSH_TOKEN is shorter than 32 characters: use a longer random value");
 }
 
 // Initialize database
@@ -44,6 +51,9 @@ app.post("/webhook", handleWebhook);
 
 // Internal API routes
 app.use("/internal", internalRoutes);
+
+// Intake routes
+app.use("/intake", intakeRoutes);
 
 // Error handler (must be after all routes)
 app.use((err: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
