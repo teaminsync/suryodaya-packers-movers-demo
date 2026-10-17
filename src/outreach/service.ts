@@ -188,7 +188,7 @@ export async function sendFollowup(leadId: string, now: Date, deps: OutreachDeps
 
 export type StaffConsentResult =
   | { ok: true }
-  | { ok: false; code: "lead_not_found" | "no_contact" | "note_required" | "note_too_long" };
+  | { ok: false; code: "lead_not_found" | "no_contact" | "note_required" | "note_too_long" | "opted_out" };
 
 export async function recordStaffConsent(leadId: string, note: string, now: Date, deps: OutreachDeps): Promise<StaffConsentResult> {
   const lead = await deps.getLead(leadId);
@@ -214,6 +214,11 @@ export async function recordStaffConsent(leadId: string, note: string, now: Date
 
   if (trimmed.length > 500) {
     return { ok: false, code: "note_too_long" };
+  }
+
+  const rows = await deps.getConsentRows(contact.id);
+  if (currentConsent(rows, CONSENT_CHANNEL_WHATSAPP, CONSENT_SCOPE_FOLLOWUP) === "withdrawn") {
+    return { ok: false, code: "opted_out" };
   }
 
   await deps.recordConsent({

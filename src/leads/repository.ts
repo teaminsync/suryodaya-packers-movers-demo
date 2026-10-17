@@ -35,6 +35,15 @@ export async function markMessageProcessed(
 }
 
 /**
+ * Unmark a message as processed (for retry after failed handling)
+ */
+export async function unmarkMessageProcessed(wamid: string): Promise<void> {
+  await sql`
+    DELETE FROM processed_messages WHERE wamid = ${wamid}
+  `;
+}
+
+/**
  * Find an active lead by WhatsApp number (not yet booked)
  */
 export async function findActiveLead(

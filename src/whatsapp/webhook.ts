@@ -76,13 +76,17 @@ export function handleWebhook(req: Request, res: Response): void {
  */
 async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
   // Lazy imports to avoid circular dependency issues
-  const { isMessageProcessed, markMessageProcessed, mergeLeadFields, setLeadStatus, setLeadEscalated, findOpenBookingOffer, createBookingOffer, recordSlotSelection, createMessage } = await import("../leads/repository.js");
+  const { isMessageProcessed, markMessageProcessed, unmarkMessageProcessed, mergeLeadFields, setLeadStatus, setLeadEscalated, findOpenBookingOffer, createBookingOffer, recordSlotSelection, createMessage } = await import("../leads/repository.js");
   const { processConversationTurn } = await import("../flows/qualification.js");
   const { promisesTeamFollowUp } = await import("../flows/followup.js");
   const { generateSlotOptions, parseSlotSelection, buildConfirmationMessage } = await import("../flows/booking.js");
   const { shouldOfferSurveySlots } = await import("../flows/slot-offer-policy.js");
   const { getBallparkRange } = await import("../company/profile.js");
   const { whatsappClient } = await import("./client.js");
+  const { buttonTapAsText, toIntentInput } = await import("../outreach/webhook-input.js");
+  const { classifyInboundIntent } = await import("../outreach/messages.js");
+  const { handleInboundOutreach } = await import("../outreach/inbound.js");
+  const { inboundDeps } = await import("../outreach/inbound-db.js");
 
   // Validate payload structure
   if (payload.object !== "whatsapp_business_account") {
@@ -103,7 +107,9 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
         continue;
       }
 
-      for (const message of messages) {
+      for (const incomingMessage of messages) {
+        const message = buttonTapAsText(incomingMessage);
+
         const wamid = message.id;
         const whatsappNumber = message.from;
         const contact = contacts?.find((c) => c.wa_id === whatsappNumber);
@@ -160,6 +166,35 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
               messageType: "text",
               body: message.text.body,
             });
+          }
+
+          // Step 2a: customer replies to the follow-up (template buttons, STOP)
+          const intentInput = toIntentInput(incomingMessage);
+          const intent = classifyInboundIntent(intentInput.input);
+          if (intent.kind !== "none") {
+            let outreach: Awaited<ReturnType<typeof handleInboundOutreach>>;
+            try {
+              outreach = await handleInboundOutreach(
+                {
+                  intent,
+                  leadId: lead.id,
+                  contactId: resolved.contact.id,
+                  to: whatsappNumber,
+                  wamid,
+                  rawText: intentInput.rawText,
+                  now: new Date(),
+                },
+                inboundDeps
+              );
+            } catch (error) {
+              console.error("[Outreach] FAILED to process a customer opt-out or decline:", error instanceof Error ? error.message : String(error));
+              await unmarkMessageProcessed(wamid);
+              throw error;
+            }
+            console.log("[Webhook] Outreach intent handled:", { leadId: lead.id, kind: intent.kind, action: outreach.action, ackSent: outreach.ackSent });
+            if (!outreach.continueWithAi) {
+              continue;
+            }
           }
 
           // Step 3: Handle interactive button taps (deterministic routing)

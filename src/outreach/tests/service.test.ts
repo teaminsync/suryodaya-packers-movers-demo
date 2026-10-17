@@ -350,4 +350,44 @@ describe("recordStaffConsent", () => {
     }
     expect(deps4.calls.find((c) => c.fn === "recordConsent")).toBeFalsy();
   });
+
+  it("refuses when customer opted out", async () => {
+    const withdrawnRow: ConsentRow = {
+      channel: "whatsapp",
+      scope: "follow_up",
+      status: "withdrawn",
+      captured_at: "2026-10-14T00:00:00.000Z",
+    };
+
+    // (i) getConsentRows returns withdrawn row -> {ok: false, code: opted_out}
+    const deps1 = makeDeps({
+      async getConsentRows(contactId: string) {
+        deps1.calls.push({ fn: "getConsentRows", args: [contactId] });
+        return [withdrawnRow];
+      },
+    });
+    const result1 = await recordStaffConsent("L1", "agreed on call", now, deps1);
+    expect(result1.ok).toBe(false);
+    if (!result1.ok) {
+      expect(result1.code).toBe("opted_out");
+    }
+    expect(deps1.calls.find((c) => c.fn === "recordConsent")).toBeFalsy();
+
+    // (ii) withdrawn row plus later granted row -> ok true, recordConsent called
+    const laterGrantedRow: ConsentRow = {
+      channel: "whatsapp",
+      scope: "follow_up",
+      status: "granted",
+      captured_at: "2026-10-15T00:00:00.000Z",
+    };
+    const deps2 = makeDeps({
+      async getConsentRows(contactId: string) {
+        deps2.calls.push({ fn: "getConsentRows", args: [contactId] });
+        return [withdrawnRow, laterGrantedRow];
+      },
+    });
+    const result2 = await recordStaffConsent("L1", "agreed on call", now, deps2);
+    expect(result2.ok).toBe(true);
+    expect(deps2.calls.find((c) => c.fn === "recordConsent")).toBeTruthy();
+  });
 });
