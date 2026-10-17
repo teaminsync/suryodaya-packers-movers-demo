@@ -80,6 +80,62 @@ export class WhatsAppClient {
   }
 
   /**
+   * Send a template message via WhatsApp Cloud API
+   */
+  async sendTemplate(params: {
+    to: string;
+    templateName: string;
+    languageCode: string;
+    bodyParams: string[];
+    buttonPayloads?: string[];
+  }): Promise<{ wamid: string | null }> {
+    const { buildTemplateRequestBody } = await import("../outreach/messages.js");
+    const url = `${GRAPH_API_BASE}/${this.apiVersion}/${this.phoneNumberId}/messages`;
+
+    const payload = buildTemplateRequestBody({
+      to: params.to,
+      templateName: params.templateName,
+      languageCode: params.languageCode,
+      bodyParams: params.bodyParams,
+      buttonPayloads: params.buttonPayloads,
+    });
+
+    console.log("[WhatsApp Client] Outbound template:", {
+      url,
+      to: params.to,
+      templateName: params.templateName,
+      paramCount: params.bodyParams.length,
+    });
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = (await response.json()) as WhatsAppSendMessageResponse | { error: unknown };
+
+      console.log("[WhatsApp Client] Raw response:", JSON.stringify(data, null, 2));
+
+      if (!response.ok) {
+        throw new Error(
+          `WhatsApp API error: ${response.status} - ${JSON.stringify(data)}`
+        );
+      }
+
+      const result = data as WhatsAppSendMessageResponse;
+      return { wamid: result.messages?.[0]?.id ?? null };
+    } catch (error) {
+      console.error("[WhatsApp Client] Send failed:", error);
+      throw error;
+    }
+  }
+
+  /**
    * Send an interactive list message via WhatsApp Cloud API
    * Allows users to select from a menu of options
    */

@@ -28,7 +28,7 @@ export function classifyInboundIntent(input: {
       return { kind: "followup_not_now" };
     }
 
-    if (!input.buttonPayload && input.buttonText) {
+    if (input.buttonText) {
       const normalized = input.buttonText.trim().toLowerCase();
       if (normalized === "yes, continue") {
         return { kind: "followup_yes" };
@@ -122,4 +122,54 @@ export function buildClickToChatLink(input: {
   const ref = input.leadId.slice(0, 8);
   const text = `Hi, I enquired about my move (ref ${ref})`;
   return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
+}
+
+export function renderFollowupTemplateText(params: [string, string]): string {
+  return `Hi ${params[0]}, this is Suryodaya Packers & Movers following up on your moving enquiry (${params[1]}). Would you like to continue on WhatsApp? We can share a ballpark estimate and free survey times right here.`;
+}
+
+export interface TemplateRequestInput {
+  to: string;
+  templateName: string;
+  languageCode: string;
+  bodyParams: string[];
+  buttonPayloads?: string[];
+}
+
+export function buildTemplateRequestBody(input: TemplateRequestInput): Record<string, unknown> {
+  const components: any[] = [];
+
+  if (input.bodyParams.length > 0) {
+    components.push({
+      type: "body",
+      parameters: input.bodyParams.map(t => ({ type: "text", text: t })),
+    });
+  }
+
+  if (input.buttonPayloads) {
+    for (let i = 0; i < input.buttonPayloads.length; i++) {
+      components.push({
+        type: "button",
+        sub_type: "quick_reply",
+        index: String(i),
+        parameters: [{ type: "payload", payload: input.buttonPayloads[i] }],
+      });
+    }
+  }
+
+  const template: any = {
+    name: input.templateName,
+    language: { code: input.languageCode },
+  };
+
+  if (components.length > 0) {
+    template.components = components;
+  }
+
+  return {
+    messaging_product: "whatsapp",
+    to: input.to,
+    type: "template",
+    template,
+  };
 }
