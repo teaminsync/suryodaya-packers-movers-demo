@@ -11,6 +11,25 @@ export function isPlaceholderText(text: string): boolean {
   return trimmed.length >= 2 && trimmed.startsWith("[") && trimmed.endsWith("]");
 }
 
+export function normalizeExtractedKeys(extracted: Record<string, unknown>): Record<string, unknown> {
+  const map: Record<string, string> = {
+    moveType: "move_type",
+    estimatedVolume: "estimated_volume",
+  };
+
+  const out: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(extracted)) {
+    const mapped = map[key] ?? key;
+    if (mapped !== key && Object.prototype.hasOwnProperty.call(extracted, mapped)) {
+      continue;
+    }
+    out[mapped] = value;
+  }
+
+  return out;
+}
+
 function hasValue(v: unknown): boolean {
   if (v === null || v === undefined) {
     return false;

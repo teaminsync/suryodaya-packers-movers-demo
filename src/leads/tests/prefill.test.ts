@@ -6,6 +6,7 @@ import {
   planPrefill,
   isPlaceholderText,
   prefillEnquiry,
+  normalizeExtractedKeys,
   PREFILL_MAX_VALUE_LENGTH,
   type PrefillDeps,
 } from "../prefill.js";
@@ -332,5 +333,42 @@ describe("prefillEnquiry", () => {
     const extractCall = deps.calls.find((c) => c.fn === "extractFields");
     expect(extractCall).toBeTruthy();
     expect(extractCall?.args[0].length).toBe(2000);
+  });
+});
+
+describe("normalizeExtractedKeys", () => {
+  it("converts camelCase to snake_case", () => {
+    const result = normalizeExtractedKeys({
+      moveType: "intercity",
+      estimatedVolume: "medium",
+      origin: "Pune",
+      hasSpecialItems: true,
+    });
+
+    expect(result).toEqual({
+      move_type: "intercity",
+      estimated_volume: "medium",
+      origin: "Pune",
+      hasSpecialItems: true,
+    });
+  });
+
+  it("snake_case key wins when both present, and input is not mutated", () => {
+    const input = { move_type: "local", moveType: "intercity" };
+    const result = normalizeExtractedKeys(input);
+
+    expect(result).toEqual({ move_type: "local" });
+    expect(input).toEqual({ move_type: "local", moveType: "intercity" });
+  });
+
+  it("regression with planPrefill", () => {
+    const result = planPrefill({
+      current: { origin: null, destination: null, move_type: null, urgency: null },
+      extracted: normalizeExtractedKeys({ moveType: "intercity", origin: "Pune" }),
+      allowed: ["origin", "destination", "move_type", "urgency"],
+    });
+
+    expect(result.fields).toEqual({ origin: "Pune", move_type: "intercity" });
+    expect(result.skipped).toEqual([]);
   });
 });
