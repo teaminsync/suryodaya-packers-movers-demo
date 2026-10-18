@@ -4,8 +4,11 @@
  */
 
 import { Router, Request, Response, NextFunction } from "express";
+import { createOutreachApi } from "../outreach/api.js";
+import { outreachApiDeps } from "../outreach/service-db.js";
 
 const router = Router();
+const outreachApi = createOutreachApi(outreachApiDeps);
 
 function requireInternalSecret(req: Request, res: Response, next: NextFunction): void {
   const secret = process.env.INTERNAL_API_SECRET;
@@ -93,6 +96,48 @@ router.get("/leads/:id/quote", async (req: Request, res: Response) => {
     res.json(quote);
   } catch (error) {
     console.error("[Internal API] quote fetch failed:", error);
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
+router.get("/leads/:id/outreach", async (req: Request, res: Response) => {
+  try {
+    const leadId = req.params.id as string;
+    const r = await outreachApi.getStatus(leadId);
+    res.status(r.status).json(r.json);
+  } catch (error) {
+    console.error(
+      "[Internal] Outreach request failed:",
+      error instanceof Error ? error.message : String(error)
+    );
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
+router.post("/leads/:id/outreach/consent", async (req: Request, res: Response) => {
+  try {
+    const leadId = req.params.id as string;
+    const r = await outreachApi.postConsent(leadId, req.body);
+    res.status(r.status).json(r.json);
+  } catch (error) {
+    console.error(
+      "[Internal] Outreach request failed:",
+      error instanceof Error ? error.message : String(error)
+    );
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
+router.post("/leads/:id/outreach/followup", async (req: Request, res: Response) => {
+  try {
+    const leadId = req.params.id as string;
+    const r = await outreachApi.postFollowup(leadId);
+    res.status(r.status).json(r.json);
+  } catch (error) {
+    console.error(
+      "[Internal] Outreach request failed:",
+      error instanceof Error ? error.message : String(error)
+    );
     res.status(500).json({ error: "internal error" });
   }
 });

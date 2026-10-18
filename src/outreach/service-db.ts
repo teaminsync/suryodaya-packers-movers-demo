@@ -7,6 +7,7 @@ import { randomUUID } from "crypto";
 import { createMessage } from "../leads/repository.js";
 import { whatsappClient } from "../whatsapp/client.js";
 import type { OutreachDeps } from "./service.js";
+import type { OutreachApiDeps } from "./api.js";
 
 export const outreachDeps: OutreachDeps = {
   async getLead(leadId: string) {
@@ -78,4 +79,21 @@ export const outreachDeps: OutreachDeps = {
   },
 
   businessNumber: process.env.WHATSAPP_BUSINESS_NUMBER,
+};
+
+async function listConsentHistory(contactId: string) {
+  return sql<any[]>`
+    SELECT status, source, wording, captured_at
+    FROM consents
+    WHERE contact_id = ${contactId}
+      AND channel = 'whatsapp'
+      AND scope = 'follow_up'
+    ORDER BY captured_at DESC
+    LIMIT 10
+  `;
+}
+
+export const outreachApiDeps: OutreachApiDeps = {
+  ...outreachDeps,
+  getConsentHistory: listConsentHistory,
 };
