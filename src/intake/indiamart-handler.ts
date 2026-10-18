@@ -18,6 +18,7 @@ export interface IndiaMartHandlerDeps {
   ingest(event: InquiryEvent, now: Date): Promise<IndiaMartIngestSummary>;
   recordReject(params: { source: string; reason: string; rawPayload: string }): Promise<void>;
   now?: () => Date;
+  onIngested?: (info: { event: InquiryEvent; summary: IndiaMartIngestSummary }) => void | Promise<void>;
 }
 
 export interface IndiaMartHandlerResponse {
@@ -102,6 +103,15 @@ export function createIndiaMartHandler(
     // Respond
     if (summary.duplicate) {
       return { status: 200, json: { code: 200, status: "duplicate" } };
+    }
+
+    if (deps.onIngested) {
+      const hook = deps.onIngested;
+      void Promise.resolve()
+        .then(() => hook({ event, summary }))
+        .catch((error) => {
+          console.error("[Intake] Post-ingest hook failed:", error instanceof Error ? error.message : String(error));
+        });
     }
 
     console.info("[Intake] IndiaMART lead ingested", {

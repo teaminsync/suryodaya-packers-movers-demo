@@ -194,3 +194,86 @@ describe("createIndiaMartHandler", () => {
     expect(idxEnd1).toBeGreaterThan(idx2);
   });
 });
+
+describe("onIngested hook", () => {
+  it("new lead", async () => {
+    const hookCalls: any[] = [];
+    const { handler } = makeHandler({
+      onIngested: (info) => {
+        hookCalls.push(info);
+      },
+    });
+
+    await handler("secret-token-value", validBody);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(hookCalls.length).toBe(1);
+    expect(hookCalls[0].event.externalRef).toBe("621654886");
+    expect(hookCalls[0].summary.leadId).toBe("l1");
+  });
+
+  it("the hook is NOT called when ingest reports a duplicate, and NOT called for an unparseable body", async () => {
+    const hookCalls: any[] = [];
+
+    const { handler: handler1 } = makeHandler({
+      async ingest() {
+        return { duplicate: true, reason: "duplicate" };
+      },
+      onIngested: (info) => {
+        hookCalls.push(info);
+      },
+    });
+
+    await handler1("secret-token-value", validBody);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(hookCalls.length).toBe(0);
+
+    const { handler: handler2 } = makeHandler({
+      onIngested: (info) => {
+        hookCalls.push(info);
+      },
+    });
+
+    await handler2("secret-token-value", { hello: "x" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(hookCalls.length).toBe(0);
+  });
+
+  it("a hook that throws synchronously, and a hook that returns a rejected promise", async () => {
+    const { handler: handler1 } = makeHandler({
+      onIngested: () => {
+        throw new Error("sync boom");
+      },
+    });
+
+    const result1 = await handler1("secret-token-value", validBody);
+    expect(result1.status).toBe(200);
+    expect(result1.json.status).toBe("success");
+
+    const { handler: handler2 } = makeHandler({
+      onIngested: async () => {
+        throw new Error("async boom");
+      },
+    });
+
+    const result2 = await handler2("secret-token-value", validBody);
+    expect(result2.status).toBe(200);
+    expect(result2.json.status).toBe("success");
+  });
+
+  it("a hook that waits 50 ms and then sets a flag", async () => {
+    let flag = false;
+    const { handler } = makeHandler({
+      onIngested: async () => {
+        await new Promise((r) => setTimeout(r, 50));
+        flag = true;
+      },
+    });
+
+    await handler("secret-token-value", validBody);
+    expect(flag).toBe(false);
+
+    await new Promise((r) => setTimeout(r, 100));
+    expect(flag).toBe(true);
+  });
+});
