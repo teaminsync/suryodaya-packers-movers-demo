@@ -16,6 +16,8 @@ export const INCLUSION = /\b(includes?|including|inclusive of|covers?|covering)\
 
 export const ASKS_SURVEY_DATE = /\b(preferred|suitable)\s+(date|time|day|slot)|\b(date|day)s?\s+(and|or|&)\s+times?\b|\bwhat\s+(date|time|day)\b|\bwhich\s+(date|time|day|slot)\b/i;
 
+export const MENTIONS_KNOWN_ROUTE = /pune|mumbai/i;
+
 export interface Scenario {
   id: string;
   title: string;
@@ -257,6 +259,25 @@ export const SCENARIOS: Scenario[] = [
         /\b(do you have|are there|any)\b[^.?!]*\b(special|fragile|piano|valuable)\b[^.?!]*\?/i,
         ASKS_SURVEY_DATE,
       ],
+    },
+  },
+  {
+    id: "S14",
+    title: "greeting_known",
+    message: "Hi",
+    known: {
+      moveType: "intercity",
+      origin: "Pune",
+      destination: "Mumbai",
+      estimatedVolume: "3bhk",
+    },
+    expect: {
+      fieldsAbsent: ["moveType", "origin", "destination"],
+      forbidden: [
+        /\b(which|what|where)\b[^.?!]*\b(city|cities|moving from|destination|origin)\b[^.?!]*\?/i,
+        /\b(let me know|tell me|share|could you|can you)\b[^.?!]*\b(city|cities|moving from|destination|origin)\b[^.?!]*\?/i,
+      ],
+      requiredAny: [MENTIONS_KNOWN_ROUTE],
     },
   },
 ];

@@ -73,6 +73,26 @@ export function buildStaffNote(
   return { ok: true, note: finalNote };
 }
 
+export function friendlySendError(reason: string): string | null {
+  const match = /"code"\s*:\s*(\d{3,6})/.exec(reason);
+  if (!match) {
+    return null;
+  }
+
+  const code = Number(match[1]);
+
+  const errorMap: Record<number, string> = {
+    131030: "WhatsApp only delivers to numbers on the sandbox recipient list. Add this number in Meta's API setup, or message a verified number.",
+    131047: "More than 24 hours have passed since the customer last wrote, so a template is required.",
+    131026: "This number cannot receive WhatsApp messages (it may not be on WhatsApp).",
+    131048: "WhatsApp is limiting messages to this number right now. Try again later.",
+    131056: "WhatsApp is limiting messages to this number right now. Try again later.",
+    190: "The WhatsApp access token has expired. Ask an administrator to renew it.",
+  };
+
+  return errorMap[code] ?? `WhatsApp rejected the message (error ${code}).`;
+}
+
 export function mapConsentResult(result: StaffConsentResult): ApiResponse {
   if (result.ok) {
     return {
@@ -110,7 +130,14 @@ export function mapFollowupResult(result: SendFollowupResult): ApiResponse {
     send_failed: 502,
   };
 
-  const reason = result.reason.slice(0, 300);
+  let reason = result.reason;
+  if (result.code === "send_failed") {
+    const friendly = friendlySendError(result.reason);
+    if (friendly !== null) {
+      reason = friendly;
+    }
+  }
+  reason = reason.slice(0, 300);
 
   const json: Record<string, unknown> = {
     ok: false,

@@ -39,6 +39,7 @@ export interface ResolveEnquiryInput {
   firstMessageText: string;
   externalRef: string | null;
   now: Date;
+  forceAttachToLatest?: boolean;
 }
 
 export interface ResolveEnquiryResult {
@@ -71,7 +72,7 @@ export async function resolveEnquiry(
   const latest = await deps.findLatestLeadForContact(contact.id);
   const decision = decideEnquiry(latest, input.now);
 
-  if (decision.action === "attach") {
+  if (decision.action === "attach" || (input.forceAttachToLatest === true && latest !== undefined)) {
     await deps.touchLead(latest!.id, input.now.toISOString());
     return {
       lead: latest!,

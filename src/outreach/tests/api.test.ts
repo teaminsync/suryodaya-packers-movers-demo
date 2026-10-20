@@ -2,15 +2,12 @@
  * Tests for outreach API orchestration layer
  */
 
-import { describe, it, expect } from "@jest/globals";
 import { createOutreachApi } from "../api.js";
 import type { OutreachApiDeps, ConsentHistoryRow } from "../api.js";
 import type {
   OutreachLead,
   OutreachContact,
   OutreachStatus,
-  SendFollowupResult,
-  StaffConsentResult,
 } from "../service.js";
 import type { ConsentRow } from "../consent.js";
 

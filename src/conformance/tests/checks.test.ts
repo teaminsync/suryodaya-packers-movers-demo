@@ -3,7 +3,7 @@
  */
 
 import { evaluateScenario, findCurrencyAmounts, normalizeDashes } from "../checks.js";
-import { NOT_OFFER, SCENARIOS, ASKS_SURVEY_DATE } from "../scenarios.js";
+import { NOT_OFFER, SCENARIOS, ASKS_SURVEY_DATE, MENTIONS_KNOWN_ROUTE } from "../scenarios.js";
 import { turnResponseSchema } from "../../flows/qualification.js";
 import type { TurnResponse } from "../../flows/qualification.js";
 
@@ -426,5 +426,13 @@ describe("Conformance checks", () => {
 
     expect(forbiddenCheck?.pass).toBe(true);
     expect(fieldsAbsentCheck?.pass).toBe(true);
+  });
+
+  it("MENTIONS_KNOWN_ROUTE matches city mentions", () => {
+    expect(MENTIONS_KNOWN_ROUTE.test("I have your move from Pune to Mumbai noted.")).toBe(true);
+  });
+
+  it("MENTIONS_KNOWN_ROUTE does not match unrelated text", () => {
+    expect(MENTIONS_KNOWN_ROUTE.test("How can I help you today?")).toBe(false);
   });
 });

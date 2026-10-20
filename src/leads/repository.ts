@@ -252,11 +252,22 @@ export async function recordSlotSelection(
   offerId: string,
   selectedSlot: string
 ): Promise<void> {
+  const now = new Date().toISOString();
+  
   await sql`
     UPDATE booking_offers SET
       selected_slot = ${selectedSlot},
-      responded_at = ${new Date().toISOString()}
+      responded_at = ${now}
     WHERE id = ${offerId}
+  `;
+
+  await sql`
+    UPDATE booking_offers SET
+      superseded_at = ${now}
+    WHERE lead_id = (SELECT lead_id FROM booking_offers WHERE id = ${offerId})
+      AND id <> ${offerId}
+      AND selected_slot IS NOT NULL
+      AND superseded_at IS NULL
   `;
 }
 

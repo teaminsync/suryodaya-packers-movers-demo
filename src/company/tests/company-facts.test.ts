@@ -214,6 +214,41 @@ describe("Company facts in system prompt", () => {
     expect(capturedSystemPrompt).not.toContain("ALREADY KNOWN");
   });
 
+  it("should include GREETING RULE when known details exist", async () => {
+    const mockProvider = new MockProvider();
+    const router = AIRouter.getInstance();
+    (router as any).config = {
+      mode: "DEMO",
+      primary: mockProvider,
+      fallbacks: [],
+    };
+    (router as any).initialized = true;
+
+    await processConversationTurn("Hi", {
+      moveType: "intercity",
+      origin: "Pune",
+    });
+
+    expect(capturedSystemPrompt).not.toBeNull();
+    expect(capturedSystemPrompt).toContain("GREETING RULE");
+  });
+
+  it("should not include GREETING RULE when nothing is known", async () => {
+    const mockProvider = new MockProvider();
+    const router = AIRouter.getInstance();
+    (router as any).config = {
+      mode: "DEMO",
+      primary: mockProvider,
+      fallbacks: [],
+    };
+    (router as any).initialized = true;
+
+    await processConversationTurn("Hi", {});
+
+    expect(capturedSystemPrompt).not.toBeNull();
+    expect(capturedSystemPrompt).not.toContain("GREETING RULE");
+  });
+
   it("should include SCHEDULING RULE in system prompt", async () => {
     const mockProvider = new MockProvider();
     const router = AIRouter.getInstance();

@@ -291,4 +291,107 @@ describe("Intake resolution", () => {
 
     expect(deps2.calls.find((c) => c.fn === "setDisplayNameIfMissing")).toBeFalsy();
   });
+
+  it("forceAttachToLatest with closed enquiry", async () => {
+    const oneDayAgo = new Date(now.getTime() - 1 * 86400000).toISOString();
+    const contact = { id: "c10", phone_e164: "+919082210545", display_name: "Test", created_at: "", updated_at: "" } as unknown as Contact;
+    const closedLead = { id: "l-closed", closed_at: "2026-10-12T00:00:00.000Z", updated_at: oneDayAgo } as unknown as Lead;
+
+    const deps = makeDeps({
+      async findContactByIdentity() {
+        deps.calls.push({ fn: "findContactByIdentity", args: ["whatsapp", "919082210545"] });
+        return contact;
+      },
+      async findLatestLeadForContact(contactId: string) {
+        deps.calls.push({ fn: "findLatestLeadForContact", args: [contactId] });
+        return closedLead;
+      },
+    });
+
+    const result = await resolveEnquiry(
+      {
+        channel: "whatsapp",
+        externalId: "919082210545",
+        contactName: "Test",
+        firstMessageText: "Not now",
+        externalRef: "wamid.F",
+        now,
+        forceAttachToLatest: true,
+      },
+      deps
+    );
+
+    expect(deps.calls).toContainEqual({ fn: "touchLead", args: ["l-closed", now.toISOString()] });
+    expect(deps.calls.find((c) => c.fn === "createLeadForContact")).toBeFalsy();
+    expect(result.createdEnquiry).toBe(false);
+    expect(result.reason).toBe("attached");
+  });
+
+  it("forceAttachToLatest with idle enquiry", async () => {
+    const thirtyOneDaysAgo = new Date(now.getTime() - 31 * 86400000).toISOString();
+    const contact = { id: "c11", phone_e164: "+919082210545", display_name: "Test2", created_at: "", updated_at: "" } as unknown as Contact;
+    const oldLead = { id: "l-old", closed_at: null, updated_at: thirtyOneDaysAgo } as unknown as Lead;
+
+    const deps = makeDeps({
+      async findContactByIdentity() {
+        deps.calls.push({ fn: "findContactByIdentity", args: ["whatsapp", "919082210545"] });
+        return contact;
+      },
+      async findLatestLeadForContact(contactId: string) {
+        deps.calls.push({ fn: "findLatestLeadForContact", args: [contactId] });
+        return oldLead;
+      },
+    });
+
+    const result = await resolveEnquiry(
+      {
+        channel: "whatsapp",
+        externalId: "919082210545",
+        contactName: "Test2",
+        firstMessageText: "Not now",
+        externalRef: "wamid.G",
+        now,
+        forceAttachToLatest: true,
+      },
+      deps
+    );
+
+    expect(deps.calls).toContainEqual({ fn: "touchLead", args: ["l-old", now.toISOString()] });
+    expect(deps.calls.find((c) => c.fn === "createLeadForContact")).toBeFalsy();
+    expect(result.createdEnquiry).toBe(false);
+    expect(result.reason).toBe("attached");
+  });
+
+  it("forceAttachToLatest with no existing enquiry", async () => {
+    const contact = { id: "c12", phone_e164: "+919082210545", display_name: "Test3", created_at: "", updated_at: "" } as unknown as Contact;
+
+    const deps = makeDeps({
+      async findContactByIdentity() {
+        deps.calls.push({ fn: "findContactByIdentity", args: ["whatsapp", "919082210545"] });
+        return contact;
+      },
+      async findLatestLeadForContact(contactId: string) {
+        deps.calls.push({ fn: "findLatestLeadForContact", args: [contactId] });
+        return undefined;
+      },
+    });
+
+    const result = await resolveEnquiry(
+      {
+        channel: "whatsapp",
+        externalId: "919082210545",
+        contactName: "Test3",
+        firstMessageText: "Not now",
+        externalRef: "wamid.H",
+        now,
+        forceAttachToLatest: true,
+      },
+      deps
+    );
+
+    expect(deps.calls.find((c) => c.fn === "touchLead")).toBeFalsy();
+    expect(deps.calls.find((c) => c.fn === "createLeadForContact")).toBeTruthy();
+    expect(result.createdEnquiry).toBe(true);
+    expect(result.reason).toBe("no_enquiry");
+  });
 });

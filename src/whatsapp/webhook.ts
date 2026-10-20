@@ -79,7 +79,8 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
   const { isMessageProcessed, markMessageProcessed, unmarkMessageProcessed, mergeLeadFields, setLeadStatus, setLeadEscalated, findOpenBookingOffer, createBookingOffer, recordSlotSelection, createMessage } = await import("../leads/repository.js");
   const { processConversationTurn } = await import("../flows/qualification.js");
   const { promisesTeamFollowUp } = await import("../flows/followup.js");
-  const { generateSlotOptions, parseSlotSelection, buildConfirmationMessage } = await import("../flows/booking.js");
+  const { generateSlotOptions, buildConfirmationMessage } = await import("../flows/booking.js");
+  const { evaluateSlotReply } = await import("../flows/slot-reply.js");
   const { shouldOfferSurveySlots } = await import("../flows/slot-offer-policy.js");
   const { getBallparkRange } = await import("../company/profile.js");
   const { whatsappClient } = await import("./client.js");
@@ -136,6 +137,8 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
           // Step 2: Load or create lead
           const { resolveEnquiry } = await import("../leads/intake.js");
           const { intakeDeps } = await import("../leads/intake-db.js");
+          const intentInput = toIntentInput(incomingMessage);
+          const intent = classifyInboundIntent(intentInput.input);
           const resolved = await resolveEnquiry(
             {
               channel: "whatsapp",
@@ -144,6 +147,7 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
               firstMessageText: message.text?.body || "[interactive]",
               externalRef: wamid,
               now: new Date(),
+              forceAttachToLatest: intent.kind === "opt_out" || intent.kind === "followup_not_now",
             },
             intakeDeps
           );
@@ -169,8 +173,6 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
           }
 
           // Step 2a: customer replies to the follow-up (template buttons, STOP)
-          const intentInput = toIntentInput(incomingMessage);
-          const intent = classifyInboundIntent(intentInput.input);
           if (intent.kind !== "none") {
             let outreach: Awaited<ReturnType<typeof handleInboundOutreach>>;
             try {
@@ -347,32 +349,64 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
           }
 
           // Step 4: Check if they're responding to a booking offer with a slot selection
-          if (lead.status === "booking_offered" && message.type === "text" && message.text?.body) {
+          if (lead.status === "booking_offered" && !lead.human_takeover && message.type === "text" && message.text?.body) {
             const openOffer = await findOpenBookingOffer(lead.id);
             if (openOffer) {
-              const slots = JSON.parse(openOffer.slot_options);
-              const selectedSlot = parseSlotSelection(message.text.body, slots);
+              let slots;
+              try {
+                slots = JSON.parse(openOffer.slot_options);
+              } catch {
+                slots = null;
+              }
 
-              if (selectedSlot) {
-                console.log("[Webhook] Slot selected:", selectedSlot.label);
-                
-                const confirmMessage = buildConfirmationMessage(selectedSlot);
-                await whatsappClient.sendMessage(whatsappNumber, confirmMessage);
-                await recordSlotSelection(openOffer.id, selectedSlot.label);
-                await setLeadStatus(lead.id, "booked");
-
-                // Log outbound booking confirmation
-                await createMessage({
-                  leadId: lead.id,
-                  wamid: null,
-                  direction: "outbound",
-                  senderType: "system",
-                  messageType: "text",
-                  body: confirmMessage,
+              if (slots) {
+                const evaluation = evaluateSlotReply({
+                  text: message.text.body,
+                  slots,
+                  now: new Date(),
                 });
 
-                console.log("[Webhook] Booking confirmed for lead:", lead.id);
-                continue;
+                if (evaluation.kind === "select") {
+                  const selectedSlot = slots[evaluation.index];
+                  console.log("[Webhook] Slot selected:", selectedSlot.label);
+                  
+                  const confirmMessage = buildConfirmationMessage(selectedSlot);
+                  await whatsappClient.sendMessage(whatsappNumber, confirmMessage);
+                  await recordSlotSelection(openOffer.id, selectedSlot.label);
+                  await setLeadStatus(lead.id, "booked");
+
+                  // Log outbound booking confirmation
+                  await createMessage({
+                    leadId: lead.id,
+                    wamid: null,
+                    direction: "outbound",
+                    senderType: "system",
+                    messageType: "text",
+                    body: confirmMessage,
+                  });
+
+                  console.log("[Webhook] Booking confirmed for lead:", lead.id);
+                  continue;
+                } else if (evaluation.kind === "stale") {
+                  const freshSlots = generateSlotOptions();
+                  const slotMessage = `Those times have already passed. Here are fresh survey times:\n\n${freshSlots.map((s, i) => `${i + 1}. ${s.label}`).join("\n")}\n\nReply with the number of your preferred time.`;
+                  
+                  await whatsappClient.sendMessage(whatsappNumber, slotMessage);
+                  
+                  // Log outbound fresh slots message
+                  await createMessage({
+                    leadId: lead.id,
+                    wamid: null,
+                    direction: "outbound",
+                    senderType: "system",
+                    messageType: "text",
+                    body: slotMessage,
+                  });
+                  
+                  await createBookingOffer(lead.id, freshSlots);
+                  console.log("[Webhook] Stale slot detected, fresh slots offered");
+                  continue;
+                }
               }
             }
           }

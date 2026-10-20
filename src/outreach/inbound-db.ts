@@ -10,7 +10,20 @@ import type { InboundOutreachDeps } from "./inbound.js";
 
 export const inboundDeps: InboundOutreachDeps = {
   async recordConsent(params) {
-    return outreachDeps.recordConsent(params);
+    if (params.status !== "withdrawn") {
+      return outreachDeps.recordConsent(params);
+    }
+
+    const { withRetry } = await import("./retry.js");
+    try {
+      await withRetry(() => outreachDeps.recordConsent(params), [500, 2000, 8000]);
+    } catch (error) {
+      console.error(
+        "[Outreach] CRITICAL: could not record an opt-out after retries:",
+        error instanceof Error ? error.message : String(error)
+      );
+      throw error;
+    }
   },
 
   async closeLead(params) {

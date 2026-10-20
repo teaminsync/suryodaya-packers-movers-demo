@@ -57,7 +57,7 @@ export function buildConversationRequest(
     .join(", ");
 
   const contextNote = knownContext
-    ? `\n\nKnown information about this lead from prior conversation:\n${knownContext}\n\nRULE FOR KNOWN INFORMATION: everything listed above is ALREADY KNOWN. Never ask the customer for any of it again, and never ask whether they have items that are already listed. Only ask about details that are NOT listed above.`
+    ? `\n\nKnown information about this lead from prior conversation:\n${knownContext}\n\nRULE FOR KNOWN INFORMATION: everything listed above is ALREADY KNOWN. Never ask the customer for any of it again, and never ask whether they have items that are already listed. Only ask about details that are NOT listed above.\n\nGREETING RULE: If the customer's message is only a greeting or a short acknowledgement, greet them in one short sentence, say in one short sentence what you have already noted (using the exact known values), and ask for ONE detail that is still missing, choosing the most useful in this order: move date or urgency, home size, special items. Never ask for anything already known.`
     : "";
 
   // Calculate ballpark if we have enough info

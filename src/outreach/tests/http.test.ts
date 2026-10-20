@@ -2,12 +2,12 @@
  * Tests for outreach HTTP layer (pure transformation functions)
  */
 
-import { describe, it, expect } from "@jest/globals";
 import {
   describeOutreach,
   buildStaffNote,
   mapConsentResult,
   mapFollowupResult,
+  friendlySendError,
 } from "../http.js";
 import type { OutreachStatus } from "../service.js";
 
@@ -302,5 +302,60 @@ describe("mapFollowupResult", () => {
     });
     expect(result.status).toBe(502);
     expect((result.json.reason as string).length).toBe(300);
+  });
+});
+
+describe("friendlySendError", () => {
+  it("code 131030 in bare and realistic strings", () => {
+    const bare = friendlySendError('{"error":{"code":131030}}');
+    expect(bare).toContain("sandbox recipient list");
+
+    const realistic = friendlySendError('{"error":{"message":"(#131030) Recipient phone number not in allowed list","type":"OAuthException","code":131030,"error_data":{"messaging_product":"whatsapp","details":"Calls to this API are restricted to numbers in the allowed list. See https://developers.facebook.com/docs/whatsapp/cloud-api/get-started#phone-number."},"error_subcode":2494002,"fbtrace_id":"AE1234567890"}}');
+    expect(realistic).toContain("sandbox recipient list");
+  });
+
+  it("code 131047 contains 24 hours", () => {
+    const result = friendlySendError('{"error":{"code":131047}}');
+    expect(result).toContain("24 hours");
+  });
+
+  it("code 131026 and 190 contain correct messages", () => {
+    const result1 = friendlySendError('{"error":{"code":131026}}');
+    expect(result1).toContain("cannot receive WhatsApp messages");
+
+    const result2 = friendlySendError('{"error":{"code":190}}');
+    expect(result2).toContain("access token has expired");
+  });
+
+  it("code 131048 and 131056 both contain limiting messages", () => {
+    const result1 = friendlySendError('{"error":{"code":131048}}');
+    expect(result1).toContain("limiting messages");
+
+    const result2 = friendlySendError('{"error":{"code":131056}}');
+    expect(result2).toContain("limiting messages");
+  });
+
+  it("unknown code and no code cases", () => {
+    const result1 = friendlySendError('{"error":{"code":131999}}');
+    expect(result1).toContain("error 131999");
+
+    const result2 = friendlySendError("boom");
+    expect(result2).toBeNull();
+
+    const result3 = friendlySendError("");
+    expect(result3).toBeNull();
+  });
+
+  it("mapFollowupResult with send_failed uses friendlySendError", () => {
+    const realistic = '{"error":{"message":"(#131030) Recipient phone number not in allowed list","type":"OAuthException","code":131030,"error_data":{"messaging_product":"whatsapp","details":"Calls to this API are restricted to numbers in the allowed list. See https://developers.facebook.com/docs/whatsapp/cloud-api/get-started#phone-number."},"error_subcode":2494002,"fbtrace_id":"AE1234567890"}}';
+    const result = mapFollowupResult({
+      ok: false,
+      code: "send_failed",
+      reason: realistic,
+    });
+
+    expect(result.status).toBe(502);
+    expect((result.json.reason as string)).toContain("sandbox recipient list");
+    expect((result.json.reason as string)).not.toContain("fbtrace");
   });
 });
