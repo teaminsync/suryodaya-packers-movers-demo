@@ -1,0 +1,187 @@
+/**
+ * Database wiring for Instagram handler
+ */
+
+import type { InstagramDeps } from "./handler.js";
+import {
+  isMessageProcessed,
+  markMessageProcessed,
+  mergeLeadFields,
+  setLeadStatus,
+  setLeadEscalated,
+  findOpenBookingOffer,
+  createBookingOffer,
+  recordSlotSelection,
+  createMessage,
+  findLeadById,
+} from "../leads/repository.js";
+import { resolveEnquiry } from "../leads/intake.js";
+import { intakeDeps } from "../leads/intake-db.js";
+import { processConversationTurn } from "../flows/qualification.js";
+import { buildKnownInfo } from "../flows/known-info.js";
+import { instagramClient } from "./client.js";
+import { splitForInstagram } from "./messages.js";
+import { setDisplayNameIfMissing } from "../leads/contacts.js";
+import { sql } from "../leads/db.js";
+import { outreachDeps } from "../outreach/service-db.js";
+import { withRetry } from "../outreach/retry.js";
+
+async function getLastInstagramInboundAt(contactId: string): Promise<string | null> {
+  const result = await sql<{ max_at: string | null }[]>`
+    SELECT MAX(m.created_at) AS max_at
+    FROM messages m
+    JOIN leads l ON m.lead_id = l.id
+    WHERE l.contact_id = ${contactId}
+      AND m.channel = 'instagram'
+      AND m.direction = 'inbound'
+  `;
+
+  return result[0]?.max_at ?? null;
+}
+
+export const instagramDeps: InstagramDeps = {
+  async isProcessed(mid: string) {
+    return isMessageProcessed(mid);
+  },
+
+  async markProcessed(mid: string) {
+    await markMessageProcessed(mid, null);
+  },
+
+  async resolveEnquiry(input) {
+    const resolved = await resolveEnquiry(
+      {
+        channel: "instagram",
+        externalId: input.igsid,
+        contactName: input.displayName,
+        firstMessageText: input.firstMessageText,
+        externalRef: input.mid,
+        now: new Date(),
+        forceAttachToLatest: input.forceAttachToLatest,
+      },
+      intakeDeps
+    );
+
+    return {
+      leadId: resolved.lead.id,
+      contactId: resolved.contact.id,
+      status: resolved.lead.status,
+      humanTakeover: resolved.lead.human_takeover,
+      createdEnquiry: resolved.createdEnquiry,
+    };
+  },
+
+  async ensureDisplayName(contactId: string, igsid: string) {
+    const profile = await instagramClient.getProfile(igsid);
+
+    if (profile) {
+      const displayName = profile.name || profile.username;
+      if (displayName) {
+        await setDisplayNameIfMissing(contactId, displayName);
+      }
+    }
+  },
+
+  async logMessage(input) {
+    await createMessage({
+      leadId: input.leadId,
+      wamid: input.mid,
+      direction: input.direction,
+      senderType: input.senderType,
+      messageType: "text",
+      body: input.body,
+      channel: "instagram",
+    });
+  },
+
+  async recordConsent(params) {
+    if (params.status !== "withdrawn") {
+      await outreachDeps.recordConsent({
+        ...params,
+        status: params.status as "granted" | "withdrawn",
+      });
+      return;
+    }
+
+    try {
+      await withRetry(
+        () => outreachDeps.recordConsent({
+          ...params,
+          status: "withdrawn",
+        }),
+        [500, 2000, 8000]
+      );
+    } catch (error) {
+      console.error(
+        "[Instagram] CRITICAL: could not record an opt-out after retries:",
+        error instanceof Error ? error.message : String(error)
+      );
+      throw error;
+    }
+  },
+
+  async sendText(input) {
+    const chunks = splitForInstagram(input.text);
+
+    for (const chunk of chunks) {
+      const result = await instagramClient.sendText(input.igsid, chunk);
+
+      await createMessage({
+        leadId: input.leadId,
+        wamid: result.mid,
+        direction: "outbound",
+        senderType: input.senderType,
+        messageType: "text",
+        body: chunk,
+        channel: "instagram",
+      });
+    }
+  },
+
+  async getOpenOffer(leadId: string) {
+    const offer = await findOpenBookingOffer(leadId);
+    if (!offer) {
+      return undefined;
+    }
+
+    return {
+      id: offer.id,
+      slotOptions: offer.slot_options,
+    };
+  },
+
+  async createOffer(leadId: string, slots) {
+    await createBookingOffer(leadId, slots);
+  },
+
+  async recordSlotSelection(offerId: string, label: string) {
+    await recordSlotSelection(offerId, label);
+  },
+
+  async setStatus(leadId: string, status: string) {
+    await setLeadStatus(leadId, status as any);
+  },
+
+  async getKnownInfo(leadId: string) {
+    const lead = await findLeadById(leadId);
+    if (!lead) {
+      return {};
+    }
+
+    return buildKnownInfo(lead);
+  },
+
+  async runTurn(text: string, known: Record<string, unknown>) {
+    return processConversationTurn(text, known);
+  },
+
+  async mergeFields(leadId: string, fields: Record<string, unknown>, provider: string, failover: boolean) {
+    await mergeLeadFields(leadId, fields as any, provider, failover);
+  },
+
+  async setEscalated(leadId: string) {
+    await setLeadEscalated(leadId);
+  },
+};
+
+export { getLastInstagramInboundAt as lastInstagramInboundAt };

@@ -48,7 +48,7 @@ export const intakeDeps: IntakeDeps = {
     contactId: string;
     source: string;
   }): Promise<Lead> {
-    return createLead(params.whatsappNumber, params.contactName, params.rawEnquiryText, {
+    return createLead(params.whatsappNumber || "", params.contactName, params.rawEnquiryText, {
       contactId: params.contactId,
       source: params.source,
     });

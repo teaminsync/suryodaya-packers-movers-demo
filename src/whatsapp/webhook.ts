@@ -596,15 +596,8 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
             }
 
             // Build known context from lead
-            const knownInfo: any = {};
-            if (lead.move_type) knownInfo.moveType = lead.move_type;
-            if (lead.origin) knownInfo.origin = lead.origin;
-            if (lead.destination) knownInfo.destination = lead.destination;
-            if (lead.urgency) knownInfo.urgency = lead.urgency;
-            if (lead.has_special_items !== null) knownInfo.hasSpecialItems = lead.has_special_items;
-            if (lead.special_items) knownInfo.specialItems = JSON.parse(lead.special_items);
-            if (lead.estimated_volume) knownInfo.estimatedVolume = lead.estimated_volume;
-            if (lead.requires_packing !== null) knownInfo.requiresPacking = lead.requires_packing;
+            const { buildKnownInfo } = await import("../flows/known-info.js");
+            const knownInfo = buildKnownInfo(lead);
 
             // Single AI call for the turn
             let turnResult;

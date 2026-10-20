@@ -7,6 +7,7 @@ import {
   isPlaceholderText,
   prefillEnquiry,
   normalizeExtractedKeys,
+  planSpecialItems,
   PREFILL_MAX_VALUE_LENGTH,
   type PrefillDeps,
 } from "../prefill.js";
@@ -370,5 +371,239 @@ describe("normalizeExtractedKeys", () => {
 
     expect(result.fields).toEqual({ origin: "Pune", move_type: "intercity" });
     expect(result.skipped).toEqual([]);
+  });
+});
+
+describe("special items", () => {
+  it("planSpecialItems with hasSpecialItems true and items present", () => {
+    const result = planSpecialItems({
+      current: { has_special_items: false, special_items: null },
+      extracted: { hasSpecialItems: true, specialItems: ["piano"] },
+    });
+
+    expect(result).toEqual(["piano"]);
+  });
+
+  it("planSpecialItems returns null when conditions fail", () => {
+    expect(planSpecialItems({
+      current: {},
+      extracted: { hasSpecialItems: false, specialItems: ["piano"] },
+    })).toBeNull();
+
+    expect(planSpecialItems({
+      current: {},
+      extracted: { specialItems: ["piano"] },
+    })).toBeNull();
+
+    expect(planSpecialItems({
+      current: {},
+      extracted: { hasSpecialItems: "true", specialItems: ["piano"] },
+    })).toBeNull();
+
+    expect(planSpecialItems({
+      current: {},
+      extracted: null,
+    })).toBeNull();
+
+    expect(planSpecialItems({
+      current: {},
+      extracted: undefined,
+    })).toBeNull();
+
+    expect(planSpecialItems({
+      current: {},
+      extracted: { hasSpecialItems: true, specialItems: [] },
+    })).toBeNull();
+  });
+
+  it("planSpecialItems returns null when already known", () => {
+    expect(planSpecialItems({
+      current: { has_special_items: true },
+      extracted: { hasSpecialItems: true, specialItems: ["piano"] },
+    })).toBeNull();
+
+    expect(planSpecialItems({
+      current: { special_items: '["safe"]' },
+      extracted: { hasSpecialItems: true, specialItems: ["piano"] },
+    })).toBeNull();
+
+    expect(planSpecialItems({
+      current: { special_items: ["safe"] },
+      extracted: { hasSpecialItems: true, specialItems: ["piano"] },
+    })).toBeNull();
+
+    expect(planSpecialItems({
+      current: { special_items: "[]", has_special_items: false },
+      extracted: { hasSpecialItems: true, specialItems: ["piano"] },
+    })).not.toBeNull();
+
+    expect(planSpecialItems({
+      current: { special_items: "", has_special_items: false },
+      extracted: { hasSpecialItems: true, specialItems: ["piano"] },
+    })).not.toBeNull();
+
+    expect(planSpecialItems({
+      current: { special_items: null, has_special_items: false },
+      extracted: { hasSpecialItems: true, specialItems: ["piano"] },
+    })).not.toBeNull();
+  });
+
+  it("planSpecialItems cleans items", () => {
+    const result = planSpecialItems({
+      current: {},
+      extracted: {
+        hasSpecialItems: true,
+        specialItems: [
+          " piano ",
+          "",
+          5,
+          null,
+          "x".repeat(60),
+          "a1",
+          "a2",
+          "a3",
+          "a4",
+          "a5",
+          "a6",
+          "a7",
+          "a8",
+          "a9",
+          "a10",
+          "a11",
+        ],
+      },
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.length).toBe(10);
+    expect(result![0]).toBe("piano");
+    expect(result!.every((item) => typeof item === "string" && item.length <= 50)).toBe(true);
+  });
+
+  it("prefillEnquiry with applySpecialItems fills special items only", async () => {
+    const deps = makeDeps({
+      async getLeadFields(leadId: string) {
+        deps.calls.push({ fn: "getLeadFields", args: [leadId] });
+        return {
+          origin: "Pune",
+          destination: "Mumbai",
+          move_type: "intercity",
+          urgency: "next week",
+          has_special_items: false,
+          special_items: null,
+        };
+      },
+      async extractFields(text: string) {
+        deps.calls.push({ fn: "extractFields", args: [text] });
+        return {
+          hasSpecialItems: true,
+          specialItems: ["piano"],
+        };
+      },
+      async applySpecialItems(leadId: string, items: string[]) {
+        deps.calls.push({ fn: "applySpecialItems", args: [leadId, items] });
+      },
+    });
+
+    const result = await prefillEnquiry({ leadId: "l1", text: TEXT, allowed: ALLOWED }, deps);
+
+    expect(result.status).toBe("filled");
+    expect(result.filled).toEqual(["special_items"]);
+
+    const applyFieldsCall = deps.calls.find((c) => c.fn === "applyFields");
+    expect(applyFieldsCall).toBeFalsy();
+
+    const applySpecialCall = deps.calls.find((c) => c.fn === "applySpecialItems");
+    expect(applySpecialCall).toBeTruthy();
+    expect(applySpecialCall?.args).toEqual(["l1", ["piano"]]);
+
+    const extractCall = deps.calls.find((c) => c.fn === "extractFields");
+    expect(extractCall).toBeTruthy();
+  });
+
+  it("prefillEnquiry with both text fields and special items", async () => {
+    const deps = makeDeps({
+      async getLeadFields(leadId: string) {
+        deps.calls.push({ fn: "getLeadFields", args: [leadId] });
+        return {
+          origin: null,
+          destination: null,
+          move_type: null,
+          urgency: null,
+          has_special_items: false,
+          special_items: null,
+        };
+      },
+      async extractFields(text: string) {
+        deps.calls.push({ fn: "extractFields", args: [text] });
+        return {
+          origin: "Pune",
+          destination: "Mumbai",
+          hasSpecialItems: true,
+          specialItems: ["piano"],
+        };
+      },
+      async applySpecialItems(leadId: string, items: string[]) {
+        deps.calls.push({ fn: "applySpecialItems", args: [leadId, items] });
+      },
+    });
+
+    const result = await prefillEnquiry({ leadId: "l1", text: TEXT, allowed: ALLOWED }, deps);
+
+    expect(result.status).toBe("filled");
+
+    const applyFieldsCall = deps.calls.find((c) => c.fn === "applyFields");
+    const applySpecialCall = deps.calls.find((c) => c.fn === "applySpecialItems");
+
+    expect(applyFieldsCall).toBeTruthy();
+    expect(applySpecialCall).toBeTruthy();
+    expect(deps.calls.findIndex((c) => c.fn === "applyFields")).toBeLessThan(
+      deps.calls.findIndex((c) => c.fn === "applySpecialItems")
+    );
+
+    expect(result.filled[result.filled.length - 1]).toBe("special_items");
+    expect(result.filled.slice(0, -1)).toEqual(["origin", "destination"]);
+  });
+
+  it("prefillEnquiry nothing_to_fill when text fields filled and special items known", async () => {
+    const deps1 = makeDeps({
+      async getLeadFields(leadId: string) {
+        deps1.calls.push({ fn: "getLeadFields", args: [leadId] });
+        return {
+          origin: "Pune",
+          destination: "Mumbai",
+          move_type: "intercity",
+          urgency: "next week",
+          has_special_items: true,
+        };
+      },
+      async applySpecialItems(leadId: string, items: string[]) {
+        deps1.calls.push({ fn: "applySpecialItems", args: [leadId, items] });
+      },
+    });
+
+    const result1 = await prefillEnquiry({ leadId: "l1", text: TEXT, allowed: ALLOWED }, deps1);
+
+    expect(result1.status).toBe("nothing_to_fill");
+    expect(deps1.calls.find((c) => c.fn === "extractFields")).toBeFalsy();
+
+    const deps2 = makeDeps({
+      async getLeadFields(leadId: string) {
+        deps2.calls.push({ fn: "getLeadFields", args: [leadId] });
+        return {
+          origin: "Pune",
+          destination: "Mumbai",
+          move_type: "intercity",
+          urgency: "next week",
+          has_special_items: false,
+          special_items: null,
+        };
+      },
+    });
+
+    const result2 = await prefillEnquiry({ leadId: "l1", text: TEXT, allowed: ALLOWED }, deps2);
+
+    expect(result2.status).toBe("nothing_to_fill");
+    expect(deps2.calls.find((c) => c.fn === "extractFields")).toBeFalsy();
   });
 });

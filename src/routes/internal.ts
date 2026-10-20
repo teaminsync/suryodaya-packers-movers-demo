@@ -33,6 +33,10 @@ router.post("/leads/:id/send-message", async (req: Request, res: Response) => {
   try {
     const { createMessage, findLeadById } = await import("../leads/repository.js");
     const { whatsappClient } = await import("../whatsapp/client.js");
+    const { instagramClient } = await import("../instagram/client.js");
+    const { findIdentityExternalId } = await import("../leads/contacts.js");
+    const { lastInstagramInboundAt } = await import("../instagram/handler-db.js");
+    const { isServiceWindowOpen } = await import("../outreach/policy.js");
 
     const leadId = req.params.id as string;
     const { text } = req.body as { text?: string };
@@ -45,6 +49,43 @@ router.post("/leads/:id/send-message", async (req: Request, res: Response) => {
     const lead = await findLeadById(leadId);
     if (!lead) {
       res.status(404).json({ error: "lead not found" });
+      return;
+    }
+
+    if (lead.source === "instagram") {
+      if (!lead.contact_id) {
+        res.status(409).json({ error: "no_instagram_identity" });
+        return;
+      }
+
+      const igsid = await findIdentityExternalId(lead.contact_id, "instagram");
+      if (!igsid) {
+        res.status(409).json({ error: "no_instagram_identity" });
+        return;
+      }
+
+      const lastInboundAt = await lastInstagramInboundAt(lead.contact_id);
+      if (!isServiceWindowOpen(lastInboundAt, new Date())) {
+        res.status(409).json({
+          error: "window_closed",
+          message: "The customer last wrote more than 24 hours ago, so Instagram does not allow a reply.",
+        });
+        return;
+      }
+
+      await instagramClient.sendText(igsid, text);
+
+      await createMessage({
+        leadId,
+        wamid: null,
+        direction: "outbound",
+        senderType: "human",
+        messageType: "text",
+        body: text,
+        channel: "instagram",
+      });
+
+      res.json({ success: true });
       return;
     }
 

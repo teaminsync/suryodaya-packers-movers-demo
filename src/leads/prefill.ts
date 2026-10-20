@@ -73,10 +73,56 @@ export type PrefillStatus =
   | "extract_failed"
   | "apply_failed";
 
+export function planSpecialItems(input: {
+  current: { has_special_items?: unknown; special_items?: unknown };
+  extracted: Record<string, unknown> | null | undefined;
+}): string[] | null {
+  if (input.extracted === null || input.extracted === undefined) {
+    return null;
+  }
+
+  if (input.extracted.hasSpecialItems !== true) {
+    return null;
+  }
+
+  if (!Array.isArray(input.extracted.specialItems)) {
+    return null;
+  }
+
+  const items = input.extracted.specialItems
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter((item) => item !== "")
+    .map((item) => item.slice(0, 50))
+    .slice(0, 10);
+
+  if (items.length === 0) {
+    return null;
+  }
+
+  if (input.current.has_special_items === true) {
+    return null;
+  }
+
+  if (Array.isArray(input.current.special_items) && input.current.special_items.length > 0) {
+    return null;
+  }
+
+  if (typeof input.current.special_items === "string") {
+    const trimmed = input.current.special_items.trim();
+    if (trimmed !== "" && trimmed !== "[]") {
+      return null;
+    }
+  }
+
+  return items;
+}
+
 export interface PrefillDeps {
   getLeadFields(leadId: string): Promise<Record<string, unknown> | undefined>;
   extractFields(text: string): Promise<Record<string, unknown> | null>;
   applyFields(leadId: string, fields: Record<string, string>): Promise<void>;
+  applySpecialItems?(leadId: string, items: string[]): Promise<void>;
 }
 
 export interface PrefillResult {
@@ -99,8 +145,15 @@ export async function prefillEnquiry(
     return { status: "lead_not_found", filled: [] };
   }
 
+  const specialKnown =
+    current.has_special_items === true ||
+    (Array.isArray(current.special_items) && current.special_items.length > 0) ||
+    (typeof current.special_items === "string" &&
+      current.special_items.trim() !== "" &&
+      current.special_items.trim() !== "[]");
+
   const allFilled = input.allowed.every((key) => hasValue(current[key]));
-  if (allFilled) {
+  if (allFilled && (deps.applySpecialItems === undefined || specialKnown)) {
     return { status: "nothing_to_fill", filled: [] };
   }
 
@@ -117,17 +170,28 @@ export async function prefillEnquiry(
   }
 
   const plan = planPrefill({ current, extracted, allowed: input.allowed });
+  const special = deps.applySpecialItems ? planSpecialItems({ current, extracted }) : null;
 
-  if (Object.keys(plan.fields).length === 0) {
+  if (Object.keys(plan.fields).length === 0 && special === null) {
     return { status: "nothing_to_fill", filled: [] };
   }
 
   try {
-    await deps.applyFields(input.leadId, plan.fields);
+    if (Object.keys(plan.fields).length > 0) {
+      await deps.applyFields(input.leadId, plan.fields);
+    }
+    if (special !== null) {
+      await deps.applySpecialItems!(input.leadId, special);
+    }
   } catch (error) {
     console.error("[Prefill] Saving extracted details failed:", error instanceof Error ? error.message : String(error));
     return { status: "apply_failed", filled: [] };
   }
 
-  return { status: "filled", filled: Object.keys(plan.fields) };
+  const filled = [...Object.keys(plan.fields)];
+  if (special !== null) {
+    filled.push("special_items");
+  }
+
+  return { status: "filled", filled };
 }

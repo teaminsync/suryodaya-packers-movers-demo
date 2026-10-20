@@ -111,6 +111,18 @@ export async function createContactWithoutPhone(
   return result[0];
 }
 
+export async function findIdentityExternalId(
+  contactId: string,
+  channel: string
+): Promise<string | undefined> {
+  const result = await sql<{ external_id: string }[]>`
+    SELECT external_id FROM contact_identities
+    WHERE contact_id = ${contactId} AND channel = ${channel}
+  `;
+
+  return result[0]?.external_id;
+}
+
 export async function setDisplayNameIfMissing(
   contactId: string,
   displayName: string

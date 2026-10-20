@@ -81,5 +81,14 @@ export function createPrefillDeps(): PrefillDeps {
         rememberedFailover
       );
     },
+
+    async applySpecialItems(leadId: string, items: string[]) {
+      await mergeLeadFields(
+        leadId,
+        { hasSpecialItems: true, specialItems: items },
+        rememberedProvider,
+        rememberedFailover
+      );
+    },
   };
 }

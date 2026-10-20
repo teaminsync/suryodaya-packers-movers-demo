@@ -24,6 +24,23 @@ if (!process.env.INDIAMART_PUSH_TOKEN) {
   console.warn("[Intake] INDIAMART_PUSH_TOKEN is shorter than 32 characters: use a longer random value");
 }
 
+// Instagram configuration check
+if (!process.env.INSTAGRAM_ACCESS_TOKEN) {
+  console.warn("[Instagram] INSTAGRAM_ACCESS_TOKEN is not set");
+}
+if (!process.env.INSTAGRAM_ACCOUNT_ID) {
+  console.warn("[Instagram] INSTAGRAM_ACCOUNT_ID is not set");
+}
+if (!process.env.INSTAGRAM_APP_SECRET) {
+  console.warn("[Instagram] INSTAGRAM_APP_SECRET is not set");
+}
+if (!process.env.INSTAGRAM_WEBHOOK_VERIFY_TOKEN) {
+  console.warn("[Instagram] INSTAGRAM_WEBHOOK_VERIFY_TOKEN is not set");
+}
+if (process.env.INSTAGRAM_DRY_RUN === "true") {
+  console.warn("[Instagram] Instagram dry-run mode: no messages are sent");
+}
+
 // Initialize database
 await initializeDatabase();
 
@@ -44,6 +61,10 @@ app.use(
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
+
+// Instagram webhook routes (mounted before /webhook to avoid conflict)
+const { instagramRoutes } = await import("./instagram/route.js");
+app.use("/webhook/instagram", instagramRoutes);
 
 // WhatsApp webhook routes
 app.get("/webhook", verifyWebhook);

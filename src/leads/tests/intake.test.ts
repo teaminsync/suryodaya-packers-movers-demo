@@ -394,4 +394,65 @@ describe("Intake resolution", () => {
     expect(result.createdEnquiry).toBe(true);
     expect(result.reason).toBe("no_enquiry");
   });
+
+  it("Instagram identity without phone creates phoneless contact and enquiry", async () => {
+    const deps = makeDeps();
+    const result = await resolveEnquiry(
+      {
+        channel: "instagram",
+        externalId: "17841400000000001",
+        contactName: "InstagramUser",
+        firstMessageText: "Hi from Instagram",
+        externalRef: "m_ig_12345",
+        now,
+      },
+      deps
+    );
+
+    expect(deps.calls).toContainEqual({ fn: "createContactWithoutPhone", args: ["InstagramUser"] });
+    expect(deps.calls).toContainEqual({ fn: "ensureIdentity", args: ["c2", "instagram", "17841400000000001"] });
+    expect(deps.calls.find((c) => c.fn === "upsertContactByPhone")).toBeFalsy();
+    const createLeadCall = deps.calls.find((c) => c.fn === "createLeadForContact");
+    expect(createLeadCall?.args[0]).toMatchObject({
+      contactId: "c2",
+      source: "instagram",
+      rawEnquiryText: "Hi from Instagram",
+      whatsappNumber: "17841400000000001",
+    });
+    expect(result.createdEnquiry).toBe(true);
+  });
+
+  it("known Instagram identity attaches to open enquiry", async () => {
+    const contact = { id: "c5", phone_e164: null, display_name: "IGUser", created_at: "", updated_at: "" } as unknown as Contact;
+    const existingLead = { id: "l-ig", closed_at: null, updated_at: new Date(now.getTime() - 86400000).toISOString() } as unknown as Lead;
+
+    const deps = makeDeps({
+      async findContactByIdentity(channel: string, externalId: string) {
+        deps.calls.push({ fn: "findContactByIdentity", args: [channel, externalId] });
+        return contact;
+      },
+      async findLatestLeadForContact(contactId: string) {
+        deps.calls.push({ fn: "findLatestLeadForContact", args: [contactId] });
+        return existingLead;
+      },
+    });
+
+    const result = await resolveEnquiry(
+      {
+        channel: "instagram",
+        externalId: "17841400000000001",
+        contactName: null,
+        firstMessageText: "Another message",
+        externalRef: "m_ig_67890",
+        now,
+      },
+      deps
+    );
+
+    expect(deps.calls.find((c) => c.fn === "createContactWithoutPhone")).toBeFalsy();
+    expect(deps.calls.find((c) => c.fn === "createLeadForContact")).toBeFalsy();
+    expect(deps.calls).toContainEqual({ fn: "touchLead", args: ["l-ig", now.toISOString()] });
+    expect(result.lead.id).toBe("l-ig");
+    expect(result.createdEnquiry).toBe(false);
+  });
 });
