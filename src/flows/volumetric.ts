@@ -6,6 +6,14 @@ import { z } from "zod";
 import { aiRouter } from "../ai/router.js";
 import { COMPANY_PROFILE } from "../company/profile.js";
 import type { AIRequest } from "../ai/types.js";
+import {
+  ROOM_KEYS,
+  type InventoryGroup,
+  formatInventoryContext,
+  resolveRoom,
+  computeCaptureTotals,
+  normaliseSameRoomAs,
+} from "./rooms.js";
 
 /**
  * Single captured item with volume and weight estimation
@@ -16,6 +24,7 @@ export const captureItemSchema = z.object({
   estimatedCubicFeet: z.number(),
   estimatedWeightKg: z.number(),
   fragile: z.boolean(),
+  alreadyCounted: z.boolean(),
 });
 
 /**
@@ -23,10 +32,9 @@ export const captureItemSchema = z.object({
  */
 export const volumetricEstimateSchema = z.object({
   assetType: z.enum(["room_overview", "item_closeup", "unclear"]),
-  suggestedRoomLabel: z.string().nullable(),
+  roomKey: z.enum(ROOM_KEYS),
+  sameRoomAs: z.string().nullable(),
   items: z.array(captureItemSchema),
-  totalEstimatedCubicFeet: z.number(),
-  totalEstimatedWeightKg: z.number(),
   packingComplexity: z.enum(["simple", "moderate", "complex", "expert_required"]),
   specialHandlingNotes: z.array(z.string()),
   confidence: z.enum(["low", "medium", "high"]),
@@ -40,9 +48,12 @@ export type VolumetricEstimate = z.infer<typeof volumetricEstimateSchema>;
 export async function analyzeMediaCapture(
   media:
     | { type: "image"; mimeType: "image/jpeg" | "image/png" | "image/webp"; base64Data: string }
-    | { type: "video"; base64Data: string }
+    | { type: "video"; base64Data: string },
+  existingInventory: InventoryGroup[] = []
 ): Promise<{
   data: VolumetricEstimate;
+  room: ReturnType<typeof resolveRoom>;
+  totals: ReturnType<typeof computeCaptureTotals>;
   providerUsed: import("../ai/types.js").ProviderName;
   wasFailover: boolean;
 }> {
@@ -102,6 +113,8 @@ Weight estimation (kg per item):
 - Treadmill: 50-100 kg
 - Motorcycle: 100-200 kg
 
+The per-item figures above are PER UNIT. In your output, estimatedCubicFeet and estimatedWeightKg on each line are the TOTAL for that whole line (per-unit figure multiplied by quantity).
+
 IMPORTANT: Weight and volume don't scale identically. A large but light item (like a wardrobe box) differs from a small but heavy item (like a filing cabinet full of papers or a piano). Estimate each independently based on what the item actually is.
 
 Asset type classification:
@@ -109,9 +122,10 @@ Asset type classification:
 - "item_closeup": Focused on one or a few specific items
 - "unclear": Poor lighting, blurry, or ambiguous framing
 
-Room label inference:
-- If you can identify the room type (kitchen, bedroom, living room, office, etc.) from visual cues, provide that label
-- If unclear, return null
+ROOM IDENTIFICATION AND DUPLICATES:
+- roomKey: choose exactly one of living_room, bedroom, kitchen, dining, bathroom, balcony, study_office, storeroom, other. Use "other" if you cannot tell. You choose only the room TYPE; never invent names like "master" or "kids".
+- sameRoomAs: if an "ITEMS ALREADY COUNTED" list is provided and this photo or video clearly shows the same physical room as one listed there, set sameRoomAs to that room's label exactly as written in the list. If it is a different room (even of the same type, such as a second bedroom), or you are not sure, set sameRoomAs to null (if you must write text, write the single word none).
+- alreadyCounted: set true for an item line ONLY if sameRoomAs is not null and the item is clearly the same physical item (same type and same appearance) as an item already listed for that room. If sameRoomAs is null, every line must be false. If unsure, use false. If the photo shows more units than were already counted (for example 6 chairs when 4 were counted), return that line with alreadyCounted false and quantity equal to only the additional units. Still estimate volume and weight for lines you mark alreadyCounted true.
 
 Special handling notes:
 - Flag items that require expert handling: pianos, artwork, antiques, large glass items, expensive electronics
@@ -127,9 +141,15 @@ Be realistic and conservative in your estimates. It's better to slightly overest
 
 ${COMPANY_PROFILE.demoNumberDisclosureNote}`;
 
-  const userPrompt = media.type === "image" 
+  const inventoryContext = formatInventoryContext(existingInventory);
+  
+  let userPrompt = media.type === "image" 
     ? "Analyze this photo and estimate the volume and weight of all visible items that would need to be moved."
     : "Analyze this video and estimate the volume and weight of all visible items that would need to be moved. If the video shows multiple angles or rooms, include all items you can identify.";
+  
+  if (inventoryContext) {
+    userPrompt += "\n\n" + inventoryContext;
+  }
 
   const request: AIRequest<typeof volumetricEstimateSchema> = {
     systemPrompt,
@@ -143,9 +163,62 @@ ${COMPANY_PROFILE.demoNumberDisclosureNote}`;
 
   const response = await aiRouter.call(request);
 
+  // Normalize sameRoomAs
+  const sameRoomAsClean = normaliseSameRoomAs(response.data.sameRoomAs);
+
+  // Resolve room (matching against existing inventory)
+  const room = resolveRoom(
+    response.data.roomKey,
+    sameRoomAsClean,
+    existingInventory
+  );
+
+  // Safety rule: if room didn't match existing, force all alreadyCounted to false
+  let correctedItems = response.data.items;
+  if (!room.matchedExisting) {
+    correctedItems = response.data.items.map((item) => ({
+      ...item,
+      alreadyCounted: false,
+    }));
+  }
+
+  // Compute totals (only new items)
+  const totals = computeCaptureTotals(correctedItems);
+
   return {
-    data: response.data,
+    data: { ...response.data, sameRoomAs: sameRoomAsClean, items: correctedItems },
+    room,
+    totals,
     providerUsed: response.providerUsed,
     wasFailover: response.wasFailover,
   };
+}
+
+export function buildCaptureReply(input: {
+  roomLabel: string;
+  items: Array<{ name: string; quantity: number; alreadyCounted: boolean }>;
+  addedCubicFeet: number;
+  addedWeightKg: number;
+}): string {
+  const newItems = input.items.filter((item) => !item.alreadyCounted);
+  const duplicateCount = input.items.filter((item) => item.alreadyCounted).length;
+
+  if (newItems.length === 0) {
+    return `That looks like the same items I've already counted for your ${input.roomLabel}, so your move total hasn't changed.\n\nSend another room's photo or video anytime, or tap "Get My Move Total" to see everything so far.`;
+  }
+
+  const itemsToShow = newItems.slice(0, 5);
+  const itemList = itemsToShow
+    .map((item) => `• ${item.name} (${item.quantity})`)
+    .join("\n");
+
+  const moreItems =
+    newItems.length > 5 ? `\n...and ${newItems.length - 5} more items` : "";
+
+  const dupNote =
+    duplicateCount > 0
+      ? `\n\n(I'd already counted ${duplicateCount} item(s) from your earlier photos, so I haven't added them twice.)`
+      : "";
+
+  return `Got it! For your ${input.roomLabel}, I can see:\n\n${itemList}${moreItems}\n\nAdded ~${input.addedCubicFeet.toFixed(1)} cu ft, ~${input.addedWeightKg.toFixed(1)} kg to your move total.${dupNote}\n\nSend another room's photo or video anytime, or tap "Get My Move Total" to see everything so far.`;
 }

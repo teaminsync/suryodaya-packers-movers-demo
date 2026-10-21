@@ -105,6 +105,15 @@ async function initSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_media_captures_lead_id ON media_captures(lead_id)
   `;
 
+  // Add room_key and room_qualifier columns (idempotent)
+  await sql`
+    ALTER TABLE media_captures ADD COLUMN IF NOT EXISTS room_key TEXT
+  `;
+
+  await sql`
+    ALTER TABLE media_captures ADD COLUMN IF NOT EXISTS room_qualifier TEXT
+  `;
+
   // Add escalation columns (idempotent)
   await sql`
     ALTER TABLE leads ADD COLUMN IF NOT EXISTS escalated BOOLEAN NOT NULL DEFAULT FALSE

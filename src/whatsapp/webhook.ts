@@ -4,8 +4,11 @@
 
 import { Request, Response } from "express";
 import { WhatsAppWebhookPayload } from "./types.js";
-import { formatRoomLabel } from "../utils/text.js";
 import { verifyMetaSignature } from "./signature.js";
+import { createKeyedQueue } from "../instagram/keyed-queue.js";
+import { senderKeyFromPayload } from "./sender-key.js";
+
+const enqueueBySender = createKeyedQueue();
 
 /**
  * GET /webhook - Meta verification handshake
@@ -66,7 +69,7 @@ export function handleWebhook(req: Request, res: Response): void {
   res.sendStatus(200);
 
   // Process the webhook asynchronously (don't block the response)
-  processWebhook(payload).catch((error) => {
+  enqueueBySender(senderKeyFromPayload(payload), () => processWebhook(payload)).catch((error) => {
     console.error("[Webhook] Processing failed:", error);
   });
 }
@@ -449,6 +452,13 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
 
               // Analyze media with AI
               const { analyzeMediaCapture } = await import("../flows/volumetric.js");
+              const { getMediaCapturesForDedupe } = await import("../leads/repository.js");
+              const { buildInventoryGroups } = await import("../flows/rooms.js");
+              
+              // Get existing inventory for de-duplication
+              const rows = await getMediaCapturesForDedupe(lead.id);
+              const groups = buildInventoryGroups(rows);
+              
               const base64Data = buffer.toString("base64");
               
               let analysisResult;
@@ -470,20 +480,23 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
                   type: "image",
                   mimeType: imageMimeType,
                   base64Data,
-                });
+                }, groups);
               } else {
                 // Video doesn't need mimeType parameter
                 analysisResult = await analyzeMediaCapture({
                   type: "video",
                   base64Data,
-                });
+                }, groups);
               }
 
               console.log("[Webhook] Media analysis complete:", {
                 assetType: analysisResult.data.assetType,
-                suggestedRoomLabel: analysisResult.data.suggestedRoomLabel,
-                itemCount: analysisResult.data.items.length,
-                totalCubicFeet: analysisResult.data.totalEstimatedCubicFeet,
+                roomKey: analysisResult.room.roomKey,
+                roomLabel: analysisResult.room.label,
+                newItems: analysisResult.totals.newItemCount,
+                duplicateItems: analysisResult.totals.duplicateItemCount,
+                addedCubicFeet: analysisResult.totals.cubicFeet,
+                matchedExisting: analysisResult.room.matchedExisting,
                 provider: analysisResult.providerUsed,
                 failover: analysisResult.wasFailover,
               });
@@ -496,10 +509,12 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
                 mediaType,
                 storagePath: uploadResult?.path || null,
                 assetType: analysisResult.data.assetType,
-                suggestedRoomLabel: analysisResult.data.suggestedRoomLabel,
+                roomKey: analysisResult.room.roomKey,
+                roomQualifier: analysisResult.room.qualifier,
+                suggestedRoomLabel: analysisResult.room.label,
                 items: analysisResult.data.items,
-                totalEstimatedCubicFeet: analysisResult.data.totalEstimatedCubicFeet,
-                totalEstimatedWeightKg: analysisResult.data.totalEstimatedWeightKg,
+                totalEstimatedCubicFeet: analysisResult.totals.cubicFeet,
+                totalEstimatedWeightKg: analysisResult.totals.weightKg,
                 packingComplexity: analysisResult.data.packingComplexity,
                 specialHandlingNotes: analysisResult.data.specialHandlingNotes,
                 confidence: analysisResult.data.confidence,
@@ -508,18 +523,13 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
               });
 
               // Build reply message
-              const roomLabel = analysisResult.data.suggestedRoomLabel
-                ? formatRoomLabel(analysisResult.data.suggestedRoomLabel)
-                : "this room";
-              const itemList = analysisResult.data.items
-                .slice(0, 5)
-                .map((item) => `\u2022 ${item.name} (${item.quantity})`)
-                .join("\n");
-              const moreItems = analysisResult.data.items.length > 5 
-                ? `\n...and ${analysisResult.data.items.length - 5} more items` 
-                : "";
-
-              const replyMessage = `Got it! For your ${roomLabel}, I can see:\n\n${itemList}${moreItems}\n\nEstimated ~${analysisResult.data.totalEstimatedCubicFeet.toFixed(1)} cu ft, ~${analysisResult.data.totalEstimatedWeightKg.toFixed(1)} kg.\n\nSend another room's photo or video anytime, or let me know when you're done and we'll add this to your move total.`;
+              const { buildCaptureReply } = await import("../flows/volumetric.js");
+              const replyMessage = buildCaptureReply({
+                roomLabel: analysisResult.room.label,
+                items: analysisResult.data.items,
+                addedCubicFeet: analysisResult.totals.cubicFeet,
+                addedWeightKg: analysisResult.totals.weightKg,
+              });
 
               await whatsappClient.sendMessage(whatsappNumber, replyMessage);
 

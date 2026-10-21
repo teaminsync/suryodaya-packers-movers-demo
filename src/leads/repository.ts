@@ -280,6 +280,8 @@ export async function createMediaCapture(params: {
   mediaType: "image" | "video";
   storagePath: string | null;
   assetType: string;
+  roomKey: string;
+  roomQualifier: string | null;
   suggestedRoomLabel: string | null;
   items: unknown[];
   totalEstimatedCubicFeet: number;
@@ -296,13 +298,13 @@ export async function createMediaCapture(params: {
   await sql`
     INSERT INTO media_captures (
       id, lead_id, wamid, media_type, storage_path,
-      asset_type, suggested_room_label, items,
+      asset_type, room_key, room_qualifier, suggested_room_label, items,
       total_estimated_cubic_feet, total_estimated_weight_kg,
       packing_complexity, special_handling_notes, confidence,
       ai_provider_used, ai_was_failover, created_at
     ) VALUES (
       ${id}, ${params.leadId}, ${params.wamid}, ${params.mediaType}, ${params.storagePath},
-      ${params.assetType}, ${params.suggestedRoomLabel}, ${JSON.stringify(params.items)},
+      ${params.assetType}, ${params.roomKey}, ${params.roomQualifier}, ${params.suggestedRoomLabel}, ${JSON.stringify(params.items)},
       ${params.totalEstimatedCubicFeet}, ${params.totalEstimatedWeightKg},
       ${params.packingComplexity}, ${JSON.stringify(params.specialHandlingNotes)}, ${params.confidence},
       ${params.aiProviderUsed}, ${params.aiWasFailover}, ${now}
@@ -318,6 +320,8 @@ export async function createMediaCapture(params: {
 export interface MediaCaptureRow {
   id: string;
   media_type: string;
+  room_key: string | null;
+  room_qualifier: string | null;
   suggested_room_label: string | null;
   items: string; // JSON text, parse with JSON.parse
   total_estimated_cubic_feet: number;
@@ -333,8 +337,23 @@ export async function getMediaCapturesForLead(
 ): Promise<MediaCaptureRow[]> {
   const result = await sql<MediaCaptureRow[]>`
     SELECT 
-      id, media_type, suggested_room_label, items,
+      id, media_type, room_key, room_qualifier, suggested_room_label, items,
       total_estimated_cubic_feet, total_estimated_weight_kg, confidence
+    FROM media_captures
+    WHERE lead_id = ${leadId}
+    ORDER BY created_at ASC
+  `;
+  return result;
+}
+
+/**
+ * Get media captures for de-duplication context (lightweight)
+ */
+export async function getMediaCapturesForDedupe(
+  leadId: string
+): Promise<Array<{ room_key: string | null; room_qualifier: string | null; items: string }>> {
+  const result = await sql<Array<{ room_key: string | null; room_qualifier: string | null; items: string }>>`
+    SELECT room_key, room_qualifier, items
     FROM media_captures
     WHERE lead_id = ${leadId}
     ORDER BY created_at ASC
