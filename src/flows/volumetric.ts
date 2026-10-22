@@ -204,7 +204,7 @@ export function buildCaptureReply(input: {
   const duplicateCount = input.items.filter((item) => item.alreadyCounted).length;
 
   if (newItems.length === 0) {
-    return `That looks like the same items I've already counted for your ${input.roomLabel}, so your move total hasn't changed.\n\nSend another room's photo or video anytime, or tap "Get My Move Total" to see everything so far.`;
+    return `That looks like the same items I've already counted for your ${input.roomLabel}, so your move total hasn't changed.\n\nIf this is actually a different room, just tell me, for example "this is the master bedroom".\n\nSend another room's photo or video anytime, or tap "Get My Move Total" to see everything so far.`;
   }
 
   const itemsToShow = newItems.slice(0, 5);
@@ -220,5 +220,5 @@ export function buildCaptureReply(input: {
       ? `\n\n(I'd already counted ${duplicateCount} item(s) from your earlier photos, so I haven't added them twice.)`
       : "";
 
-  return `Got it! For your ${input.roomLabel}, I can see:\n\n${itemList}${moreItems}\n\nAdded ~${input.addedCubicFeet.toFixed(1)} cu ft, ~${input.addedWeightKg.toFixed(1)} kg to your move total.${dupNote}\n\nSend another room's photo or video anytime, or tap "Get My Move Total" to see everything so far.`;
+  return `Got it! For your ${input.roomLabel}, I can see:\n\n${itemList}${moreItems}\n\nAdded ~${input.addedCubicFeet.toFixed(1)} cu ft, ~${input.addedWeightKg.toFixed(1)} kg to your move total.${dupNote}\n\nIf I've filed this under the wrong room, just tell me, for example "this is the master bedroom".\n\nSend another room's photo or video anytime, or tap "Get My Move Total" to see everything so far.`;
 }

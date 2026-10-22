@@ -230,6 +230,7 @@ describe("volumetric", () => {
       expect(reply).toContain("• chair (2)");
       expect(reply).toContain("Added ~25.5 cu ft, ~40.2 kg to your move total");
       expect(reply).toContain('tap "Get My Move Total"');
+      expect(reply).toContain('If I\'ve filed this under the wrong room, just tell me, for example "this is the master bedroom".');
     });
 
     it("should cap item list at 5 items", () => {
@@ -290,6 +291,7 @@ describe("volumetric", () => {
       expect(reply).toContain("That looks like the same items I've already counted for your Bedroom");
       expect(reply).toContain("so your move total hasn't changed");
       expect(reply).not.toContain("Added ~");
+      expect(reply).toContain('If this is actually a different room, just tell me, for example "this is the master bedroom".');
     });
   });
 });

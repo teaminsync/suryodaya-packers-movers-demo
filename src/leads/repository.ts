@@ -362,6 +362,56 @@ export async function getMediaCapturesForDedupe(
 }
 
 /**
+ * Get the latest media capture for a lead
+ */
+export async function getLatestMediaCaptureForLead(
+  leadId: string
+): Promise<{ id: string; room_key: string | null; room_qualifier: string | null; suggested_room_label: string | null; items: string; created_at: string } | undefined> {
+  const result = await sql<Array<{ id: string; room_key: string | null; room_qualifier: string | null; suggested_room_label: string | null; items: string; created_at: string }>>`
+    SELECT id, room_key, room_qualifier, suggested_room_label, items, created_at
+    FROM media_captures
+    WHERE lead_id = ${leadId}
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+  return result[0];
+}
+
+/**
+ * Update media capture room information
+ */
+export async function updateMediaCaptureRoom(params: {
+  captureId: string;
+  roomKey: string;
+  roomQualifier: string | null;
+  label: string;
+  itemsJson: string | null;
+  cubicFeet: number | null;
+  weightKg: number | null;
+}): Promise<void> {
+  if (params.itemsJson !== null && params.cubicFeet !== null && params.weightKg !== null) {
+    await sql`
+      UPDATE media_captures SET
+        room_key = ${params.roomKey},
+        room_qualifier = ${params.roomQualifier},
+        suggested_room_label = ${params.label},
+        items = ${params.itemsJson},
+        total_estimated_cubic_feet = ${params.cubicFeet},
+        total_estimated_weight_kg = ${params.weightKg}
+      WHERE id = ${params.captureId}
+    `;
+  } else {
+    await sql`
+      UPDATE media_captures SET
+        room_key = ${params.roomKey},
+        room_qualifier = ${params.roomQualifier},
+        suggested_room_label = ${params.label}
+      WHERE id = ${params.captureId}
+    `;
+  }
+}
+
+/**
  * Message history row interface
  */
 export interface MessageRow {

@@ -605,6 +605,24 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
               continue;
             }
 
+            // Check for room correction (deterministic parser)
+            const { parseRoomCorrection, planRoomCorrection, buildRoomCorrectionReply } = await import("../flows/room-correction.js");
+            if (parseRoomCorrection(messageText) !== null) {
+              const { getLatestMediaCaptureForLead, updateMediaCaptureRoom } = await import("../leads/repository.js");
+              const latestCapture = await getLatestMediaCaptureForLead(lead.id);
+              const correction = planRoomCorrection({ text: messageText, latest: latestCapture, now: new Date() });
+              const correctionReply = buildRoomCorrectionReply(correction);
+              if (correction.kind !== "none" && correctionReply !== null) {
+                if (correction.kind === "relabel") {
+                  await updateMediaCaptureRoom({ captureId: correction.captureId, roomKey: correction.roomKey, roomQualifier: correction.qualifier, label: correction.label, itemsJson: correction.itemsJson, cubicFeet: correction.cubicFeet, weightKg: correction.weightKg });
+                }
+                await whatsappClient.sendMessage(whatsappNumber, correctionReply);
+                await createMessage({ leadId: lead.id, wamid: null, direction: "outbound", senderType: "system", messageType: "text", body: correctionReply });
+                console.log("[Webhook] Room correction handled:", { leadId: lead.id, kind: correction.kind });
+                continue;
+              }
+            }
+
             // Build known context from lead
             const { buildKnownInfo } = await import("../flows/known-info.js");
             const knownInfo = buildKnownInfo(lead);
