@@ -2,7 +2,7 @@
  * Tests for volumetric.ts
  */
 
-import { analyzeMediaCapture, buildCaptureReply } from "../volumetric.js";
+import { analyzeMediaCapture, buildCaptureReply, buildVolumetricRequest, finalizeVolumetric, type VolumetricEstimate } from "../volumetric.js";
 import { aiRouter } from "../../ai/router.js";
 import type { InventoryGroup } from "../rooms.js";
 
@@ -210,6 +210,158 @@ describe("volumetric", () => {
       } finally {
         (aiRouter as any).call = originalCall;
       }
+    });
+  });
+
+  describe("buildVolumetricRequest", () => {
+    it("should include ITEMS ALREADY COUNTED when inventory provided", () => {
+      const inventory: InventoryGroup[] = [{
+        roomKey: "bedroom",
+        qualifier: null,
+        label: "Bedroom",
+        items: [{ name: "bed", quantity: 1 }, { name: "wardrobe", quantity: 2 }],
+      }];
+
+      const request = buildVolumetricRequest(
+        { type: "image", mimeType: "image/jpeg", base64Data: "test" },
+        inventory
+      );
+
+      expect(request.userPrompt).toContain("ITEMS ALREADY COUNTED FOR THIS MOVE");
+      expect(request.userPrompt).toContain("- Bedroom: bed (1), wardrobe (2)");
+    });
+
+    it("should not include ITEMS ALREADY COUNTED when no inventory", () => {
+      const request = buildVolumetricRequest(
+        { type: "image", mimeType: "image/jpeg", base64Data: "test" }
+      );
+
+      expect(request.userPrompt).not.toContain("ITEMS ALREADY COUNTED FOR THIS MOVE");
+    });
+
+    it("should produce same prompts as analyzeMediaCapture passes to aiRouter.call", async () => {
+      let capturedSystemPrompt = "";
+      let capturedUserPrompt = "";
+      const originalCall = (aiRouter as any).call;
+      try {
+        (aiRouter as any).call = async (req: any) => {
+          capturedSystemPrompt = req.systemPrompt;
+          capturedUserPrompt = req.userPrompt;
+          return {
+            data: {
+              assetType: "room_overview",
+              roomKey: "bedroom",
+              sameRoomAs: null,
+              items: [],
+              packingComplexity: "simple",
+              specialHandlingNotes: [],
+              confidence: "high",
+            },
+            providerUsed: "mock",
+            wasFailover: false,
+          };
+        };
+
+        const inventory: InventoryGroup[] = [{
+          roomKey: "bedroom",
+          qualifier: null,
+          label: "Bedroom",
+          items: [{ name: "bed", quantity: 1 }],
+        }];
+
+        await analyzeMediaCapture(
+          { type: "image", mimeType: "image/jpeg", base64Data: "test" },
+          inventory
+        );
+
+        const request = buildVolumetricRequest(
+          { type: "image", mimeType: "image/jpeg", base64Data: "test" },
+          inventory
+        );
+
+        expect(request.systemPrompt).toBe(capturedSystemPrompt);
+        expect(request.userPrompt).toBe(capturedUserPrompt);
+      } finally {
+        (aiRouter as any).call = originalCall;
+      }
+    });
+
+    it("should include WHAT TO COUNT section before Asset type classification", () => {
+      const request = buildVolumetricRequest(
+        { type: "image", mimeType: "image/jpeg", base64Data: "test" }
+      );
+
+      expect(request.systemPrompt).toContain("WHAT TO COUNT:");
+      expect(request.systemPrompt).toContain("Do NOT list fixtures that stay with the property");
+      
+      const whatToCountIndex = request.systemPrompt.indexOf("WHAT TO COUNT:");
+      const assetTypeIndex = request.systemPrompt.indexOf("Asset type classification:");
+      
+      expect(whatToCountIndex).toBeGreaterThan(-1);
+      expect(assetTypeIndex).toBeGreaterThan(-1);
+      expect(whatToCountIndex).toBeLessThan(assetTypeIndex);
+    });
+  });
+
+  describe("finalizeVolumetric", () => {
+    it("should normalize sameRoomAs", () => {
+      const data: VolumetricEstimate = {
+        assetType: "room_overview",
+        roomKey: "bedroom",
+        sameRoomAs: ":null:",
+        items: [],
+        packingComplexity: "simple",
+        specialHandlingNotes: [],
+        confidence: "high",
+      };
+
+      const result = finalizeVolumetric(data);
+      expect(result.data.sameRoomAs).toBe(null);
+    });
+
+    it("should force alreadyCounted false when no inventory matches", () => {
+      const data: VolumetricEstimate = {
+        assetType: "room_overview",
+        roomKey: "bedroom",
+        sameRoomAs: null,
+        items: [
+          { name: "bed", quantity: 1, estimatedCubicFeet: 50, estimatedWeightKg: 80, fragile: false, alreadyCounted: true },
+        ],
+        packingComplexity: "simple",
+        specialHandlingNotes: [],
+        confidence: "high",
+      };
+
+      const result = finalizeVolumetric(data);
+      expect(result.room.matchedExisting).toBe(false);
+      expect(result.data.items[0].alreadyCounted).toBe(false);
+    });
+
+    it("should keep alreadyCounted true when sameRoomAs matches inventory", () => {
+      const inventory: InventoryGroup[] = [{
+        roomKey: "bedroom",
+        qualifier: null,
+        label: "Bedroom",
+        items: [{ name: "bed", quantity: 1 }],
+      }];
+
+      const data: VolumetricEstimate = {
+        assetType: "room_overview",
+        roomKey: "bedroom",
+        sameRoomAs: "Bedroom",
+        items: [
+          { name: "bed", quantity: 1, estimatedCubicFeet: 50, estimatedWeightKg: 80, fragile: false, alreadyCounted: true },
+          { name: "chair", quantity: 2, estimatedCubicFeet: 10, estimatedWeightKg: 15, fragile: false, alreadyCounted: false },
+        ],
+        packingComplexity: "simple",
+        specialHandlingNotes: [],
+        confidence: "high",
+      };
+
+      const result = finalizeVolumetric(data, inventory);
+      expect(result.room.matchedExisting).toBe(true);
+      expect(result.data.items[0].alreadyCounted).toBe(true);
+      expect(result.data.items[1].alreadyCounted).toBe(false);
     });
   });
 

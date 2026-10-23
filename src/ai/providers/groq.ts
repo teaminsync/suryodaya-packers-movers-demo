@@ -7,9 +7,11 @@ import { AIProviderError } from "../errors.js";
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+export const DEFAULT_GROQ_VISION_MODEL = "qwen/qwen3.8-27b";
+
 interface GroqMessage {
   role: "system" | "user" | "assistant";
-  content: string;
+  content: string | Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }>;
 }
 
 interface GroqRequest {
@@ -19,6 +21,8 @@ interface GroqRequest {
     type: "json_object";
   };
   max_completion_tokens: number;
+  reasoning_effort?: "none" | "default" | "low" | "medium" | "high";
+  reasoning_format?: "hidden" | "parsed";
 }
 
 interface GroqResponse {
@@ -39,21 +43,27 @@ interface GroqResponse {
 
 export class GroqAdapter implements AIProviderAdapter {
   readonly name = "groq" as const;
-  readonly capabilities = {
-    images: false,
-    video: false,
-  } as const;
+  readonly capabilities: {
+    readonly images: boolean;
+    readonly video: boolean;
+  };
 
   private readonly apiKey: string;
   private readonly model: string;
   private readonly retryDelaysMs: number[];
   private readonly maxRetryAfterMs: number;
+  private readonly reasoning?: { effort: "none" | "default" | "low" | "medium" | "high"; format: "hidden" | "parsed" };
 
-  constructor(options?: { retryDelaysMs?: number[]; maxRetryAfterMs?: number }) {
+  constructor(options?: { retryDelaysMs?: number[]; maxRetryAfterMs?: number; model?: string; images?: boolean; reasoning?: { effort: "none" | "default" | "low" | "medium" | "high"; format: "hidden" | "parsed" } }) {
     this.apiKey = process.env.GROQ_API_KEY || "";
-    this.model = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
+    this.model = options?.model || process.env.GROQ_MODEL || "openai/gpt-oss-120b";
     this.retryDelaysMs = options?.retryDelaysMs || [1000, 2500];
     this.maxRetryAfterMs = options?.maxRetryAfterMs || 5000;
+    this.reasoning = options?.reasoning;
+    this.capabilities = {
+      images: options?.images === true,
+      video: false,
+    };
 
     if (!this.apiKey) {
       throw new Error("GROQ_API_KEY is required for Groq adapter");
@@ -69,12 +79,38 @@ export class GroqAdapter implements AIProviderAdapter {
   }> {
     const startTime = Date.now();
 
-    // Reject image/video requests before any network call
-    if (request.images?.length || request.video) {
+    // Reject video requests before any network call
+    if (request.video) {
       throw new AIProviderError(
         "Groq adapter does not support image or video input",
         "groq"
       );
+    }
+
+    // Reject image requests if images capability is disabled
+    if (request.images?.length && !this.capabilities.images) {
+      throw new AIProviderError(
+        "Groq adapter does not support image or video input",
+        "groq"
+      );
+    }
+
+    // Image size validation when images are enabled
+    if (request.images?.length && this.capabilities.images) {
+      if (request.images.length > 5) {
+        throw new AIProviderError(
+          "Groq vision accepts at most 5 images per request",
+          "groq"
+        );
+      }
+
+      const totalBase64Length = request.images.reduce((sum, img) => sum + img.base64Data.length, 0);
+      if (totalBase64Length > 3500000) {
+        throw new AIProviderError(
+          "Image too large for Groq vision (request limit about 4 MB)",
+          "groq"
+        );
+      }
     }
 
     // Build JSON schema
@@ -85,6 +121,23 @@ export class GroqAdapter implements AIProviderAdapter {
 
     const addendum = `Respond with a single JSON object (no markdown, no commentary) that conforms to this JSON Schema. Include every required key. For optional keys you have no value for, OMIT the key entirely; never use null for them.\nJSON Schema:\n${JSON.stringify(jsonSchema)}`;
 
+    const hasImages = (request.images?.length ?? 0) > 0;
+    const imageCount = request.images?.length ?? 0;
+
+    let userContent: string | Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }>;
+
+    if (hasImages) {
+      userContent = [
+        { type: "text", text: request.userPrompt },
+        ...request.images!.map((img) => ({
+          type: "image_url" as const,
+          image_url: { url: `data:${img.mimeType};base64,${img.base64Data}` },
+        })),
+      ];
+    } else {
+      userContent = request.userPrompt;
+    }
+
     const groqRequest: GroqRequest = {
       model: this.model,
       messages: [
@@ -94,13 +147,17 @@ export class GroqAdapter implements AIProviderAdapter {
         },
         {
           role: "user",
-          content: request.userPrompt,
+          content: userContent,
         },
       ],
       response_format: {
         type: "json_object",
       },
       max_completion_tokens: request.maxOutputTokens || 4096,
+      ...(this.reasoning ? {
+        reasoning_effort: this.reasoning.effort,
+        reasoning_format: this.reasoning.format,
+      } : {}),
     };
 
     console.debug("[Groq] Outbound request:", {
@@ -108,6 +165,8 @@ export class GroqAdapter implements AIProviderAdapter {
       model: this.model,
       systemPromptLength: request.systemPrompt.length,
       userPromptLength: request.userPrompt.length,
+      hasImages,
+      imageCount,
       maxTokens: groqRequest.max_completion_tokens,
     });
 

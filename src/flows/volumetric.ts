@@ -43,20 +43,14 @@ export const volumetricEstimateSchema = z.object({
 export type VolumetricEstimate = z.infer<typeof volumetricEstimateSchema>;
 
 /**
- * Analyze photo or video for volumetric estimation
+ * Build the AI request for volumetric estimation (without calling the router)
  */
-export async function analyzeMediaCapture(
+export function buildVolumetricRequest(
   media:
     | { type: "image"; mimeType: "image/jpeg" | "image/png" | "image/webp"; base64Data: string }
     | { type: "video"; base64Data: string },
   existingInventory: InventoryGroup[] = []
-): Promise<{
-  data: VolumetricEstimate;
-  room: ReturnType<typeof resolveRoom>;
-  totals: ReturnType<typeof computeCaptureTotals>;
-  providerUsed: import("../ai/types.js").ProviderName;
-  wasFailover: boolean;
-}> {
+): AIRequest<typeof volumetricEstimateSchema> {
   const systemPrompt = `You are a professional volumetric estimation assistant for ${COMPANY_PROFILE.name}, a ${COMPANY_PROFILE.gstDisplayText} packers and movers company based in ${COMPANY_PROFILE.city}.
 
 Your job is to analyze photos or videos of household or office spaces and estimate the volume and weight of items that need to be moved.
@@ -117,6 +111,11 @@ The per-item figures above are PER UNIT. In your output, estimatedCubicFeet and 
 
 IMPORTANT: Weight and volume don't scale identically. A large but light item (like a wardrobe box) differs from a small but heavy item (like a filing cabinet full of papers or a piano). Estimate each independently based on what the item actually is.
 
+WHAT TO COUNT:
+- List only things a mover would actually carry out of the home: furniture, freestanding appliances, boxes, rugs, mirrors and loose decor.
+- Do NOT list fixtures that stay with the property: built-in or fitted cabinets and wardrobes, kitchen countertops, sinks, tiles, wall paint, windows, curtain rails, ceiling lights, fans and wall-mounted fittings.
+- A freestanding refrigerator, cooking range, washing machine or kitchen island IS counted.
+
 Asset type classification:
 - "room_overview": Wide shot showing multiple items, full or partial room view
 - "item_closeup": Focused on one or a few specific items
@@ -151,7 +150,7 @@ ${COMPANY_PROFILE.demoNumberDisclosureNote}`;
     userPrompt += "\n\n" + inventoryContext;
   }
 
-  const request: AIRequest<typeof volumetricEstimateSchema> = {
+  return {
     systemPrompt,
     userPrompt,
     responseSchema: volumetricEstimateSchema,
@@ -160,23 +159,33 @@ ${COMPANY_PROFILE.demoNumberDisclosureNote}`;
       ? { images: [{ mimeType: media.mimeType, base64Data: media.base64Data }] }
       : { video: { mimeType: "video/mp4", base64Data: media.base64Data } }),
   };
+}
 
-  const response = await aiRouter.call(request);
-
+/**
+ * Finalize the volumetric estimate data (normalize and compute totals)
+ */
+export function finalizeVolumetric(
+  data: VolumetricEstimate,
+  existingInventory: InventoryGroup[] = []
+): {
+  data: VolumetricEstimate;
+  room: ReturnType<typeof resolveRoom>;
+  totals: ReturnType<typeof computeCaptureTotals>;
+} {
   // Normalize sameRoomAs
-  const sameRoomAsClean = normaliseSameRoomAs(response.data.sameRoomAs);
+  const sameRoomAsClean = normaliseSameRoomAs(data.sameRoomAs);
 
   // Resolve room (matching against existing inventory)
   const room = resolveRoom(
-    response.data.roomKey,
+    data.roomKey,
     sameRoomAsClean,
     existingInventory
   );
 
   // Safety rule: if room didn't match existing, force all alreadyCounted to false
-  let correctedItems = response.data.items;
+  let correctedItems = data.items;
   if (!room.matchedExisting) {
-    correctedItems = response.data.items.map((item) => ({
+    correctedItems = data.items.map((item) => ({
       ...item,
       alreadyCounted: false,
     }));
@@ -186,9 +195,33 @@ ${COMPANY_PROFILE.demoNumberDisclosureNote}`;
   const totals = computeCaptureTotals(correctedItems);
 
   return {
-    data: { ...response.data, sameRoomAs: sameRoomAsClean, items: correctedItems },
+    data: { ...data, sameRoomAs: sameRoomAsClean, items: correctedItems },
     room,
     totals,
+  };
+}
+
+/**
+ * Analyze photo or video for volumetric estimation
+ */
+export async function analyzeMediaCapture(
+  media:
+    | { type: "image"; mimeType: "image/jpeg" | "image/png" | "image/webp"; base64Data: string }
+    | { type: "video"; base64Data: string },
+  existingInventory: InventoryGroup[] = []
+): Promise<{
+  data: VolumetricEstimate;
+  room: ReturnType<typeof resolveRoom>;
+  totals: ReturnType<typeof computeCaptureTotals>;
+  providerUsed: import("../ai/types.js").ProviderName;
+  wasFailover: boolean;
+}> {
+  const request = buildVolumetricRequest(media, existingInventory);
+  const response = await aiRouter.call(request);
+  const finalized = finalizeVolumetric(response.data, existingInventory);
+
+  return {
+    ...finalized,
     providerUsed: response.providerUsed,
     wasFailover: response.wasFailover,
   };

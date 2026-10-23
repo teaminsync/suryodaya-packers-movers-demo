@@ -7,6 +7,7 @@ import { WhatsAppWebhookPayload } from "./types.js";
 import { verifyMetaSignature } from "./signature.js";
 import { createKeyedQueue } from "../instagram/keyed-queue.js";
 import { senderKeyFromPayload } from "./sender-key.js";
+import { mediaFailureMessage } from "./media-error.js";
 
 const enqueueBySender = createKeyedQueue();
 
@@ -577,7 +578,7 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
 
             } catch (error) {
               console.error("[Webhook] Media processing failed:", error);
-              const errorMessage = "Sorry, I had trouble processing that - could you try sending it again?";
+              const errorMessage = mediaFailureMessage(error);
               await whatsappClient.sendMessage(whatsappNumber, errorMessage);
               
               // Log outbound error message

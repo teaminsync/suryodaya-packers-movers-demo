@@ -3,7 +3,7 @@
  */
 
 import { z } from "zod";
-import { GroqAdapter } from "../providers/groq.js";
+import { GroqAdapter, DEFAULT_GROQ_VISION_MODEL } from "../providers/groq.js";
 import { AIProviderError } from "../errors.js";
 import { AIRequest } from "../types.js";
 
@@ -74,6 +74,10 @@ describe("GroqAdapter", () => {
     responseSchema: testSchema,
     taskName: "groq_test",
   };
+
+  it("DEFAULT_GROQ_VISION_MODEL should equal qwen/qwen3.8-27b", () => {
+    expect(DEFAULT_GROQ_VISION_MODEL).toBe("qwen/qwen3.8-27b");
+  });
 
   it("should successfully call Groq API and return parsed response", async () => {
     const adapter = new GroqAdapter({ retryDelaysMs: [1, 1] });
@@ -335,5 +339,196 @@ describe("GroqAdapter", () => {
     expect(() => {
       new GroqAdapter();
     }).toThrow("GROQ_API_KEY is required for Groq adapter");
+  });
+
+  it("should have capabilities.images false by default", () => {
+    const adapter = new GroqAdapter({ retryDelaysMs: [1, 1] });
+    expect(adapter.capabilities.images).toBe(false);
+    expect(adapter.capabilities.video).toBe(false);
+  });
+
+  it("should have capabilities.images true when constructed with images option", async () => {
+    const adapter = new GroqAdapter({
+      images: true,
+      model: "qwen/qwen3.8-27b",
+      retryDelaysMs: [1, 1],
+    });
+    expect(adapter.capabilities.images).toBe(true);
+    expect(adapter.capabilities.video).toBe(false);
+
+    const response = await adapter.call(testRequest);
+    expect(fetchCalls.length).toBe(1);
+
+    const body = JSON.parse(fetchCalls[0].init.body as string);
+    expect(body.model).toBe("qwen/qwen3.8-27b");
+  });
+
+  it("should send image as array content part when images enabled", async () => {
+    const adapter = new GroqAdapter({
+      images: true,
+      model: "qwen/qwen3.8-27b",
+      retryDelaysMs: [1, 1],
+    });
+
+    const imageRequest: AIRequest<typeof testSchema> = {
+      ...testRequest,
+      images: [{ mimeType: "image/jpeg", base64Data: "AAAA" }],
+    };
+
+    await adapter.call(imageRequest);
+    expect(fetchCalls.length).toBe(1);
+
+    const body = JSON.parse(fetchCalls[0].init.body as string);
+    const userMessage = body.messages[1];
+    expect(Array.isArray(userMessage.content)).toBe(true);
+    expect(userMessage.content[0]).toEqual({ type: "text", text: "test" });
+    expect(userMessage.content[1]).toEqual({
+      type: "image_url",
+      image_url: { url: "data:image/jpeg;base64,AAAA" },
+    });
+  });
+
+  it("should keep content as plain string for text-only request on images adapter", async () => {
+    const adapter = new GroqAdapter({
+      images: true,
+      model: "qwen/qwen3.8-27b",
+      retryDelaysMs: [1, 1],
+    });
+
+    await adapter.call(testRequest);
+    expect(fetchCalls.length).toBe(1);
+
+    const body = JSON.parse(fetchCalls[0].init.body as string);
+    const userMessage = body.messages[1];
+    expect(typeof userMessage.content).toBe("string");
+    expect(userMessage.content).toBe("test");
+  });
+
+  it("should reject video on images adapter without calling fetch", async () => {
+    const adapter = new GroqAdapter({
+      images: true,
+      model: "qwen/qwen3.8-27b",
+      retryDelaysMs: [1, 1],
+    });
+
+    const videoRequest: AIRequest<typeof testSchema> = {
+      ...testRequest,
+      video: { mimeType: "video/mp4", base64Data: "test" },
+    };
+
+    let caughtError: AIProviderError | undefined;
+    try {
+      await adapter.call(videoRequest);
+    } catch (error) {
+      if (error instanceof AIProviderError) {
+        caughtError = error;
+      }
+    }
+
+    expect(caughtError).toBeDefined();
+    expect(caughtError?.message).toContain("does not support image or video");
+    expect(fetchCalls.length).toBe(0);
+  });
+
+  it("should reject more than 5 images without calling fetch", async () => {
+    const adapter = new GroqAdapter({
+      images: true,
+      retryDelaysMs: [1, 1],
+    });
+
+    const manyImagesRequest: AIRequest<typeof testSchema> = {
+      ...testRequest,
+      images: Array.from({ length: 6 }, () => ({
+        mimeType: "image/jpeg" as const,
+        base64Data: "A",
+      })),
+    };
+
+    let caughtError: AIProviderError | undefined;
+    try {
+      await adapter.call(manyImagesRequest);
+    } catch (error) {
+      if (error instanceof AIProviderError) {
+        caughtError = error;
+      }
+    }
+
+    expect(caughtError).toBeDefined();
+    expect(caughtError?.message).toContain("at most 5 images");
+    expect(fetchCalls.length).toBe(0);
+  });
+
+  it("should reject image larger than 3.5M characters without calling fetch", async () => {
+    const adapter = new GroqAdapter({
+      images: true,
+      retryDelaysMs: [1, 1],
+    });
+
+    const largeImageRequest: AIRequest<typeof testSchema> = {
+      ...testRequest,
+      images: [{ mimeType: "image/jpeg", base64Data: "A".repeat(3600000) }],
+    };
+
+    let caughtError: AIProviderError | undefined;
+    try {
+      await adapter.call(largeImageRequest);
+    } catch (error) {
+      if (error instanceof AIProviderError) {
+        caughtError = error;
+      }
+    }
+
+    expect(caughtError).toBeDefined();
+    expect(caughtError?.message).toContain("too large for Groq vision");
+    expect(fetchCalls.length).toBe(0);
+  });
+
+  it("should successfully call Groq vision API and return parsed response", async () => {
+    const adapter = new GroqAdapter({
+      images: true,
+      retryDelaysMs: [1, 1],
+    });
+
+    const imageRequest: AIRequest<typeof testSchema> = {
+      ...testRequest,
+      images: [{ mimeType: "image/png", base64Data: "test" }],
+    };
+
+    const response = await adapter.call(imageRequest);
+    expect(response.raw).toEqual({ ok: true });
+    expect(fetchCalls.length).toBe(1);
+  });
+
+  it("should send reasoning parameters when configured", async () => {
+    const adapter = new GroqAdapter({
+      images: true,
+      reasoning: { effort: "none", format: "hidden" },
+      retryDelaysMs: [1, 1],
+    });
+
+    const imageRequest: AIRequest<typeof testSchema> = {
+      ...testRequest,
+      images: [{ mimeType: "image/png", base64Data: "test" }],
+    };
+
+    await adapter.call(imageRequest);
+    expect(fetchCalls.length).toBe(1);
+
+    const body = JSON.parse(fetchCalls[0].init.body as string);
+    expect(body.reasoning_effort).toBe("none");
+    expect(body.reasoning_format).toBe("hidden");
+  });
+
+  it("should not send reasoning parameters when not configured", async () => {
+    const adapter = new GroqAdapter({
+      retryDelaysMs: [1, 1],
+    });
+
+    await adapter.call(testRequest);
+    expect(fetchCalls.length).toBe(1);
+
+    const body = JSON.parse(fetchCalls[0].init.body as string);
+    expect(Object.prototype.hasOwnProperty.call(body, "reasoning_effort")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(body, "reasoning_format")).toBe(false);
   });
 });

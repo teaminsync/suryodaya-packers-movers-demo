@@ -384,12 +384,20 @@ describe("AIRouter initialization with Groq", () => {
   let savedAnthropicKey: string | undefined;
   let savedForceProvider: string | undefined;
   let savedGroqKey: string | undefined;
+  let savedGroqVisionModel: string | undefined;
+  let savedMediaImagePrimary: string | undefined;
+
+  const testSchema = z.object({
+    success: z.boolean(),
+  });
 
   beforeEach(() => {
     savedGeminiKey = process.env.GEMINI_API_KEY;
     savedAnthropicKey = process.env.ANTHROPIC_API_KEY;
     savedForceProvider = process.env.AI_FORCE_PROVIDER;
     savedGroqKey = process.env.GROQ_API_KEY;
+    savedGroqVisionModel = process.env.GROQ_VISION_MODEL;
+    savedMediaImagePrimary = process.env.MEDIA_IMAGE_PRIMARY;
   });
 
   afterEach(() => {
@@ -416,6 +424,18 @@ describe("AIRouter initialization with Groq", () => {
     } else {
       delete process.env.GROQ_API_KEY;
     }
+
+    if (savedGroqVisionModel !== undefined) {
+      process.env.GROQ_VISION_MODEL = savedGroqVisionModel;
+    } else {
+      delete process.env.GROQ_VISION_MODEL;
+    }
+
+    if (savedMediaImagePrimary !== undefined) {
+      process.env.MEDIA_IMAGE_PRIMARY = savedMediaImagePrimary;
+    } else {
+      delete process.env.MEDIA_IMAGE_PRIMARY;
+    }
   });
 
   it("DEMO with GROQ_API_KEY set should have groq primary and gemini fallback", async () => {
@@ -433,6 +453,90 @@ describe("AIRouter initialization with Groq", () => {
     expect(config?.fallbacks.map((f) => f.name)).toEqual(["gemini"]);
   });
 
+  it("should serve video via gemini with wasFailover false when chain is groq then gemini", async () => {
+    const router = AIRouter.getInstance();
+    const mockGroqImages = new MockProvider("groq", { images: true, video: false });
+    const mockGemini = new MockProvider("gemini", { images: true, video: true }, false, { success: true });
+
+    (router as any).config = {
+      mode: "DEMO",
+      primary: mockGroqImages,
+      fallbacks: [],
+      mediaChain: [mockGroqImages, mockGemini],
+    };
+    (router as any).initialized = true;
+
+    const videoRequest: AIRequest<typeof testSchema> = {
+      systemPrompt: "Test",
+      userPrompt: "Test",
+      responseSchema: testSchema,
+      taskName: "video_test",
+      video: { mimeType: "video/mp4", base64Data: "test" },
+    };
+
+    const response = await router.call(videoRequest);
+    expect(response.providerUsed).toBe("gemini");
+    expect(response.wasFailover).toBe(false);
+    expect(mockGroqImages.callCount).toBe(0);
+    expect(mockGemini.callCount).toBe(1);
+  });
+
+  it("should serve image via gemini with wasFailover true when groq fails", async () => {
+    const router = AIRouter.getInstance();
+    const mockGroqImages = new MockProvider("groq", { images: true, video: false }, true);
+    const mockGemini = new MockProvider("gemini", { images: true, video: true }, false, { success: true });
+
+    (router as any).config = {
+      mode: "DEMO",
+      primary: mockGroqImages,
+      fallbacks: [],
+      mediaChain: [mockGroqImages, mockGemini],
+    };
+    (router as any).initialized = true;
+
+    const imageRequest: AIRequest<typeof testSchema> = {
+      systemPrompt: "Test",
+      userPrompt: "Test",
+      responseSchema: testSchema,
+      taskName: "image_test",
+      images: [{ mimeType: "image/png", base64Data: "test" }],
+    };
+
+    const response = await router.call(imageRequest);
+    expect(response.providerUsed).toBe("gemini");
+    expect(response.wasFailover).toBe(true);
+    expect(mockGroqImages.callCount).toBe(1);
+    expect(mockGemini.callCount).toBe(1);
+  });
+
+  it("should serve image via groq with wasFailover false when groq succeeds", async () => {
+    const router = AIRouter.getInstance();
+    const mockGroqImages = new MockProvider("groq", { images: true, video: false }, false, { success: true });
+    const mockGemini = new MockProvider("gemini", { images: true, video: true });
+
+    (router as any).config = {
+      mode: "DEMO",
+      primary: mockGroqImages,
+      fallbacks: [],
+      mediaChain: [mockGroqImages, mockGemini],
+    };
+    (router as any).initialized = true;
+
+    const imageRequest: AIRequest<typeof testSchema> = {
+      systemPrompt: "Test",
+      userPrompt: "Test",
+      responseSchema: testSchema,
+      taskName: "image_test",
+      images: [{ mimeType: "image/png", base64Data: "test" }],
+    };
+
+    const response = await router.call(imageRequest);
+    expect(response.providerUsed).toBe("groq");
+    expect(response.wasFailover).toBe(false);
+    expect(mockGroqImages.callCount).toBe(1);
+    expect(mockGemini.callCount).toBe(0);
+  });
+
   it("DEMO without GROQ_API_KEY should have gemini primary and no fallbacks", async () => {
     process.env.GEMINI_API_KEY = "test-gemini";
     delete process.env.ANTHROPIC_API_KEY;
@@ -448,7 +552,7 @@ describe("AIRouter initialization with Groq", () => {
     expect(config?.fallbacks).toEqual([]);
   });
 
-  it("DEMO with GROQ_API_KEY should have mediaChain with gemini", async () => {
+  it("DEMO with GROQ_API_KEY set should have mediaChain with gemini then groq", async () => {
     process.env.GEMINI_API_KEY = "test-gemini";
     delete process.env.ANTHROPIC_API_KEY;
     process.env.GROQ_API_KEY = "test-groq";
@@ -458,10 +562,10 @@ describe("AIRouter initialization with Groq", () => {
     await router.initialize();
 
     const config = router.getConfig();
-    expect(config?.mediaChain?.map((p) => p.name)).toEqual(["gemini"]);
+    expect(config?.mediaChain?.map((p) => p.name)).toEqual(["gemini", "groq"]);
   });
 
-  it("DEMO without GROQ_API_KEY should have mediaChain with gemini", async () => {
+  it("DEMO without GROQ_API_KEY should have mediaChain with gemini only", async () => {
     process.env.GEMINI_API_KEY = "test-gemini";
     delete process.env.ANTHROPIC_API_KEY;
     delete process.env.GROQ_API_KEY;
@@ -472,6 +576,34 @@ describe("AIRouter initialization with Groq", () => {
 
     const config = router.getConfig();
     expect(config?.mediaChain?.map((p) => p.name)).toEqual(["gemini"]);
+  });
+
+  it("DEMO with MEDIA_IMAGE_PRIMARY=groq should have mediaChain groq then gemini", async () => {
+    process.env.GEMINI_API_KEY = "test-gemini";
+    delete process.env.ANTHROPIC_API_KEY;
+    process.env.GROQ_API_KEY = "test-groq";
+    process.env.MEDIA_IMAGE_PRIMARY = "groq";
+
+    const router = AIRouter.getInstance();
+    router.reset();
+    await router.initialize();
+
+    const config = router.getConfig();
+    expect(config?.mediaChain?.map((p) => p.name)).toEqual(["groq", "gemini"]);
+  });
+
+  it("DEMO with MEDIA_IMAGE_PRIMARY=banana should have mediaChain gemini then groq", async () => {
+    process.env.GEMINI_API_KEY = "test-gemini";
+    delete process.env.ANTHROPIC_API_KEY;
+    process.env.GROQ_API_KEY = "test-groq";
+    process.env.MEDIA_IMAGE_PRIMARY = "banana";
+
+    const router = AIRouter.getInstance();
+    router.reset();
+    await router.initialize();
+
+    const config = router.getConfig();
+    expect(config?.mediaChain?.map((p) => p.name)).toEqual(["gemini", "groq"]);
   });
 
   it("PRODUCTION should have claude primary, gemini fallback, gemini media, no groq", async () => {

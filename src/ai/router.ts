@@ -3,7 +3,7 @@ import { AIRequest, AIResponse, ProviderName } from "./types.js";
 import { AIProviderAdapter } from "./providers/provider.interface.js";
 import { ClaudeAdapter } from "./providers/claude.js";
 import { GeminiAdapter } from "./providers/gemini.js";
-import { GroqAdapter } from "./providers/groq.js";
+import { GroqAdapter, DEFAULT_GROQ_VISION_MODEL } from "./providers/groq.js";
 import {
   AISchemaValidationError,
   AIAllProvidersFailed,
@@ -99,16 +99,38 @@ export class AIRouter {
       }
     }
 
-    // Demo mode: Groq primary (if available), otherwise Gemini; Gemini for media
+    // Demo mode: Groq primary (if available), otherwise Gemini; media chain determined by MEDIA_IMAGE_PRIMARY
     if (process.env.GROQ_API_KEY) {
+      const groqVision = new GroqAdapter({
+        model: process.env.GROQ_VISION_MODEL || DEFAULT_GROQ_VISION_MODEL,
+        images: true,
+        reasoning: { effort: "none", format: "hidden" },
+        maxRetryAfterMs: 30000,
+      });
+
+      const mediaImagePrimary = (process.env.MEDIA_IMAGE_PRIMARY || "").trim().toLowerCase();
+      let mediaChain: AIProviderAdapter[];
+      if (mediaImagePrimary === "groq") {
+        mediaChain = [groqVision, geminiAdapter];
+      } else if (mediaImagePrimary === "gemini" || mediaImagePrimary === "") {
+        mediaChain = [geminiAdapter, groqVision];
+      } else {
+        console.warn(
+          `[AI Router] MEDIA_IMAGE_PRIMARY must be "groq" or "gemini" (got "${process.env.MEDIA_IMAGE_PRIMARY}"), using "gemini"`
+        );
+        mediaChain = [geminiAdapter, groqVision];
+      }
+
+      const mediaNames = mediaChain.map((p) => p.name).join(" -> ");
+
       this.config = {
         mode: "DEMO",
         primary: new GroqAdapter(),
         fallbacks: [geminiAdapter],
-        mediaChain: [geminiAdapter],
+        mediaChain,
       };
       console.info(
-        "AI profile: DEMO | text: groq -> gemini | media: gemini"
+        `AI profile: DEMO | text: groq -> gemini | images: ${mediaNames} | video: gemini`
       );
     } else {
       this.config = {
@@ -118,7 +140,7 @@ export class AIRouter {
         mediaChain: [geminiAdapter],
       };
       console.info(
-        "AI profile: DEMO | text: gemini | media: gemini"
+        "AI profile: DEMO | text: gemini | images: gemini | video: gemini"
       );
     }
 
@@ -145,9 +167,6 @@ export class AIRouter {
 
     // Build provider chain
     const chain = hasMedia && mediaChain ? mediaChain : [primary, ...fallbacks];
-
-    // Determine baseline for failover calculation
-    const baseline = hasMedia && mediaChain ? mediaChain[0] : primary;
 
     // Determine required capabilities
     const required = {
@@ -181,6 +200,9 @@ export class AIRouter {
       if (required.video) needs.push("video");
       throw new AINoCapableProviderError(needs);
     }
+
+    // Determine baseline for failover calculation
+    const baseline = hasMedia && mediaChain ? eligible[0] : primary;
 
     // Try each eligible provider in order
     const failures: Array<{ provider: ProviderName; error: Error }> = [];
