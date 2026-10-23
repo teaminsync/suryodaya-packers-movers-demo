@@ -9,6 +9,12 @@ import {
   AIAllProvidersFailed,
   AINoCapableProviderError,
 } from "./errors.js";
+import {
+  defaultTextChain,
+  defaultImageChain,
+  resolveChain,
+  type ChainProvider,
+} from "./chain-config.js";
 
 type AIMode = "PRODUCTION" | "DEMO";
 
@@ -17,6 +23,7 @@ interface RouterConfig {
   primary: AIProviderAdapter;
   fallbacks: AIProviderAdapter[];
   mediaChain?: AIProviderAdapter[];
+  videoChain?: AIProviderAdapter[];
 }
 
 /**
@@ -52,97 +59,113 @@ export class AIRouter {
       );
     }
 
-    // Auto-detection path
-    const anthropicKey = process.env.ANTHROPIC_API_KEY;
-    const geminiKey = process.env.GEMINI_API_KEY;
+    // Gather API keys
+    const keys = {
+      claude: !!process.env.ANTHROPIC_API_KEY,
+      gemini: !!process.env.GEMINI_API_KEY,
+      groq: !!process.env.GROQ_API_KEY,
+    };
 
-    // Gemini is required in all modes
-    if (!geminiKey) {
-      throw new Error(
-        "GEMINI_API_KEY is required in both PRODUCTION and DEMO modes"
-      );
+    // Resolve text and image chains
+    const text = resolveChain(process.env.AI_TEXT_CHAIN, keys, defaultTextChain(keys));
+    const image = resolveChain(process.env.AI_IMAGE_CHAIN, keys, defaultImageChain(keys));
+
+    // Log warnings for unknown names and missing keys
+    for (const name of text.unknown) {
+      console.warn(`[AI Router] Unknown provider "${name}" in AI_TEXT_CHAIN ignored`);
+    }
+    for (const name of text.skippedNoKey) {
+      console.warn(`[AI Router] ${name} listed in AI_TEXT_CHAIN but its API key is not set; skipped`);
+    }
+    for (const name of image.unknown) {
+      console.warn(`[AI Router] Unknown provider "${name}" in AI_IMAGE_CHAIN ignored`);
+    }
+    for (const name of image.skippedNoKey) {
+      console.warn(`[AI Router] ${name} listed in AI_IMAGE_CHAIN but its API key is not set; skipped`);
     }
 
-    // Reuse one Gemini instance
-    const geminiAdapter = new GeminiAdapter();
+    // Build adapters lazily, once each
+    const adapters: Record<string, AIProviderAdapter | null> = {
+      gemini: keys.gemini ? new GeminiAdapter() : null,
+      groqText: keys.groq ? new GroqAdapter() : null,
+      groqVision: keys.groq
+        ? new GroqAdapter({
+            model: process.env.GROQ_VISION_MODEL || DEFAULT_GROQ_VISION_MODEL,
+            images: true,
+            reasoning: { effort: "none", format: "hidden" },
+            maxRetryAfterMs: 30000,
+          })
+        : null,
+      claude: null,
+    };
 
-    // Check if we should try production mode
-    if (anthropicKey) {
+    // Build Claude only if it appears in a chain after key filtering
+    const claudeStillInChain =
+      text.names.includes("claude") || image.names.includes("claude");
+    if (claudeStillInChain && keys.claude) {
       try {
         const claudeAdapter = new ClaudeAdapter();
         const isValid = await claudeAdapter.validateKey();
-
-        if (isValid) {
-          // Production mode: Claude primary, Gemini fallback for text; Gemini for media
-          this.config = {
-            mode: "PRODUCTION",
-            primary: claudeAdapter,
-            fallbacks: [geminiAdapter],
-            mediaChain: [geminiAdapter],
-          };
-          console.info(
-            "AI profile: PRODUCTION | text: claude -> gemini | media: gemini"
-          );
-
-          this.initialized = true;
-          return;
+        if (!isValid) {
+          console.warn("[AI Router] claude listed but its key failed validation; skipped");
+          // Remove claude from both chains
+          text.names = text.names.filter((n) => n !== "claude") as ChainProvider[];
+          image.names = image.names.filter((n) => n !== "claude") as ChainProvider[];
         } else {
-          console.warn(
-            "[AI Router] ANTHROPIC_API_KEY present but failed validation - falling back to DEMO mode"
-          );
+          adapters.claude = claudeAdapter;
         }
       } catch (error) {
         console.warn(
-          "[AI Router] Failed to initialize Claude adapter - falling back to DEMO mode:",
+          "[AI Router] claude listed but its key failed validation; skipped:",
           error instanceof Error ? error.message : String(error)
         );
+        text.names = text.names.filter((n) => n !== "claude") as ChainProvider[];
+        image.names = image.names.filter((n) => n !== "claude") as ChainProvider[];
       }
     }
 
-    // Demo mode: Groq primary (if available), otherwise Gemini; media chain determined by MEDIA_IMAGE_PRIMARY
-    if (process.env.GROQ_API_KEY) {
-      const groqVision = new GroqAdapter({
-        model: process.env.GROQ_VISION_MODEL || DEFAULT_GROQ_VISION_MODEL,
-        images: true,
-        reasoning: { effort: "none", format: "hidden" },
-        maxRetryAfterMs: 30000,
-      });
-
-      const mediaImagePrimary = (process.env.MEDIA_IMAGE_PRIMARY || "").trim().toLowerCase();
-      let mediaChain: AIProviderAdapter[];
-      if (mediaImagePrimary === "groq") {
-        mediaChain = [groqVision, geminiAdapter];
-      } else if (mediaImagePrimary === "gemini" || mediaImagePrimary === "") {
-        mediaChain = [geminiAdapter, groqVision];
-      } else {
-        console.warn(
-          `[AI Router] MEDIA_IMAGE_PRIMARY must be "groq" or "gemini" (got "${process.env.MEDIA_IMAGE_PRIMARY}"), using "gemini"`
-        );
-        mediaChain = [geminiAdapter, groqVision];
-      }
-
-      const mediaNames = mediaChain.map((p) => p.name).join(" -> ");
-
-      this.config = {
-        mode: "DEMO",
-        primary: new GroqAdapter(),
-        fallbacks: [geminiAdapter],
-        mediaChain,
-      };
-      console.info(
-        `AI profile: DEMO | text: groq -> gemini | images: ${mediaNames} | video: gemini`
-      );
-    } else {
-      this.config = {
-        mode: "DEMO",
-        primary: geminiAdapter,
-        fallbacks: [],
-        mediaChain: [geminiAdapter],
-      };
-      console.info(
-        "AI profile: DEMO | text: gemini | images: gemini | video: gemini"
-      );
+    // Map names to adapters
+    const textAdapters: AIProviderAdapter[] = [];
+    for (const name of text.names) {
+      const adapter =
+        name === "groq" ? adapters.groqText : name === "claude" ? adapters.claude : adapters.gemini;
+      if (adapter) textAdapters.push(adapter);
     }
+
+    const imageAdapters: AIProviderAdapter[] = [];
+    for (const name of image.names) {
+      const adapter =
+        name === "groq" ? adapters.groqVision : name === "claude" ? adapters.claude : adapters.gemini;
+      if (adapter) imageAdapters.push(adapter);
+    }
+
+    // Check if text chain is empty
+    if (textAdapters.length === 0) {
+      let msg = "No usable text provider. Set GEMINI_API_KEY and/or GROQ_API_KEY";
+      if (text.provided) {
+        msg += ` or fix AI_TEXT_CHAIN (got "${process.env.AI_TEXT_CHAIN}")`;
+      }
+      throw new Error(msg);
+    }
+
+    // Determine mode
+    const mode: AIMode = textAdapters[0].name === "claude" ? "PRODUCTION" : "DEMO";
+
+    // Build config
+    const videoChain = adapters.gemini ? [adapters.gemini] : [];
+    this.config = {
+      mode,
+      primary: textAdapters[0],
+      fallbacks: textAdapters.slice(1),
+      mediaChain: imageAdapters,
+      videoChain,
+    };
+
+    // Log summary
+    const textNames = textAdapters.map((a) => a.name).join(" -> ");
+    const imageNames = imageAdapters.length > 0 ? imageAdapters.map((a) => a.name).join(" -> ") : "none";
+    const videoName = adapters.gemini ? "gemini" : "none";
+    console.info(`AI profile (${mode}): text: ${textNames} | images: ${imageNames} | video: ${videoName}`);
 
     this.initialized = true;
   }
@@ -160,13 +183,20 @@ export class AIRouter {
     }
 
     const startTime = Date.now();
-    const { mode, primary, fallbacks, mediaChain } = this.config;
+    const { mode, primary, fallbacks, mediaChain, videoChain } = this.config;
 
     // Check if this is a media request
     const hasMedia = (request.images?.length ?? 0) > 0 || !!request.video;
 
     // Build provider chain
-    const chain = hasMedia && mediaChain ? mediaChain : [primary, ...fallbacks];
+    let chain: AIProviderAdapter[];
+    if (request.video && videoChain !== undefined) {
+      chain = videoChain;
+    } else if (hasMedia && mediaChain !== undefined) {
+      chain = mediaChain;
+    } else {
+      chain = [primary, ...fallbacks];
+    }
 
     // Determine required capabilities
     const required = {
@@ -202,7 +232,10 @@ export class AIRouter {
     }
 
     // Determine baseline for failover calculation
-    const baseline = hasMedia && mediaChain ? eligible[0] : primary;
+    const baseline =
+      (request.video && videoChain !== undefined) || (hasMedia && mediaChain !== undefined)
+        ? eligible[0]
+        : primary;
 
     // Try each eligible provider in order
     const failures: Array<{ provider: ProviderName; error: Error }> = [];
