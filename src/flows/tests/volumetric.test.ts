@@ -293,6 +293,7 @@ describe("volumetric", () => {
 
       expect(request.systemPrompt).toContain("WHAT TO COUNT:");
       expect(request.systemPrompt).toContain("Do NOT list fixtures that stay with the property");
+      expect(request.systemPrompt).toContain("Only list items you can actually see in the image");
       
       const whatToCountIndex = request.systemPrompt.indexOf("WHAT TO COUNT:");
       const assetTypeIndex = request.systemPrompt.indexOf("Asset type classification:");

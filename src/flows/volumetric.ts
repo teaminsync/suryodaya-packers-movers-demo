@@ -115,6 +115,7 @@ WHAT TO COUNT:
 - List only things a mover would actually carry out of the home: furniture, freestanding appliances, boxes, rugs, mirrors and loose decor.
 - Do NOT list fixtures that stay with the property: built-in or fitted cabinets and wardrobes, kitchen countertops, sinks, tiles, wall paint, windows, curtain rails, ceiling lights, fans and wall-mounted fittings.
 - A freestanding refrigerator, cooking range, washing machine or kitchen island IS counted.
+- Only list items you can actually see in the image. Never add boxes, packing materials or other items you assume the customer will pack.
 
 Asset type classification:
 - "room_overview": Wide shot showing multiple items, full or partial room view
