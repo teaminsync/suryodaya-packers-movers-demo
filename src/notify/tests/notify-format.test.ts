@@ -152,4 +152,55 @@ describe("notify format", () => {
 
     expect(params[2]).toBe("see dashboard");
   });
+
+  it("buildEmail booking_confirmed exact format", () => {
+    const event: AdminEvent = {
+      type: "booking_confirmed",
+      leadId: "L1",
+      source: "whatsapp",
+      customerName: "Rahul Verma",
+      phone: "+919876543210",
+      moveType: "residential",
+      origin: "Pune",
+      destination: "Mumbai",
+      estimatedVolume: "3bhk",
+      urgency: "high",
+      specialItems: ["piano"],
+      lastMessage: "Yes book it",
+      slotLabel: "Tue, 20 Oct at 10:00 AM",
+    };
+
+    const { subject, text } = buildEmail(event, "http://localhost:3001/");
+
+    expect(subject).toBe("[Suryodaya] Survey booked - Rahul Verma (WhatsApp)");
+    expect(text).toBe(
+      `Survey booked\n\nCustomer: Rahul Verma (WhatsApp)\nPhone: +919876543210\nMove: residential, Pune to Mumbai\nSize: 3bhk | Urgency: high\nSpecial items: piano\nSurvey slot: Tue, 20 Oct at 10:00 AM\nLast message: "Yes book it"\n\nOpen in dashboard: http://localhost:3001/leads/L1`
+    );
+  });
+
+  it("buildTemplateParams booking_confirmed exact format", () => {
+    const event: AdminEvent = {
+      type: "booking_confirmed",
+      leadId: "L1",
+      source: "whatsapp",
+      customerName: "Rahul Verma",
+      phone: "+919876543210",
+      moveType: "residential",
+      origin: "Pune",
+      destination: "Mumbai",
+      estimatedVolume: "3bhk",
+      urgency: "high",
+      specialItems: ["piano"],
+      lastMessage: "Yes book it",
+      slotLabel: "Tue, 20 Oct at 10:00 AM",
+    };
+
+    const params = buildTemplateParams(event);
+
+    expect(params).toEqual([
+      "Survey booked",
+      "Rahul Verma (WhatsApp)",
+      'Tue, 20 Oct at 10:00 AM | Pune to Mumbai | 3bhk | "Yes book it"',
+    ]);
+  });
 });

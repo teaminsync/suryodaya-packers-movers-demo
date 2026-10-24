@@ -604,4 +604,30 @@ describe("handleInstagramMessage", () => {
 
     expect(result.status).toBe("replied");
   });
+
+  it("does not call notifyAdmin or setEscalated for plain message", async () => {
+    const deps = makeDeps({
+      async runTurn() {
+        deps.calls.push({ fn: "runTurn", args: Array.from(arguments) });
+        return {
+          data: {
+            replyMessage: "Thank you for your inquiry. When are you planning your move?",
+            extractedFields: {},
+            wantsToBookSurvey: false,
+            wantsHuman: false,
+            needsTeamFollowUp: false,
+          },
+          providerUsed: "gemini",
+          wasFailover: false,
+        };
+      },
+    });
+
+    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "Hi, I need a moving quote", attachmentType: null };
+    const result = await handleInstagramMessage(event, deps, now);
+
+    expect(result.status).toBe("replied");
+    expect(deps.calls.find((c) => c.fn === "notifyAdmin")).toBeUndefined();
+    expect(deps.calls.find((c) => c.fn === "setEscalated")).toBeUndefined();
+  });
 });

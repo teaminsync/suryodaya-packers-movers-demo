@@ -95,6 +95,10 @@ app.listen(PORT, async () => {
   console.log(`Webhook URL: http://localhost:${PORT}/webhook`);
   console.log(`Health check: http://localhost:${PORT}/health`);
   
-  const { describeNotifyChannels } = await import("./notify/notify-db.js");
-  console.log("[Notify] Admin alerts:", describeNotifyChannels());
+  try {
+    const { describeNotifyChannels } = await import("./notify/notify-db.js");
+    console.log("[Notify] Admin alerts:", describeNotifyChannels());
+  } catch (error) {
+    console.log("[Notify] Could not read alert settings:", error instanceof Error ? error.message : String(error));
+  }
 });
