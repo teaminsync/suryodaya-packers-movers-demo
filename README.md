@@ -51,11 +51,11 @@ GEMINI_MODEL=gemini-3.6-flash
 #### Optional (enables additional providers and custom chains):
 ```
 ANTHROPIC_API_KEY=your_anthropic_key_here
-CLAUDE_MODEL=claude-sonnet-5
+CLAUDE_MODEL=claude-sonnet-5-5
 GROQ_API_KEY=your_groq_key_here
 # Comma-separated provider chains (auto-selected from available keys if not specified)
-AI_TEXT_CHAIN=groq,gemini,claude
-AI_IMAGE_CHAIN=groq,gemini,claude
+AI_TEXT_CHAIN=groq,gemini
+AI_IMAGE_CHAIN=groq,gemini
 ```
 
 #### Database (required):

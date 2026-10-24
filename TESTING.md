@@ -140,11 +140,6 @@ No special setup needed - these always pass if the router logic is correct.
 - You forgot to set `GEMINI_API_KEY` in `.env`
 - Or you're running tests without the `.env` file loaded
 
-### "Expected PRODUCTION mode, got DEMO"
-- This test is outdated and refers to old router logic that used DEMO/PRODUCTION modes
-- Modern router uses chain configuration instead
-- Check the startup log for validation failure details
-
 ### "All AI providers failed"
 - All configured providers failed (when multiple providers are available)
 - Check all API keys are valid
