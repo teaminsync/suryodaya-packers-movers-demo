@@ -272,6 +272,30 @@ export async function recordSlotSelection(
 }
 
 /**
+ * Record survey calendar details for a booking offer
+ */
+export async function recordSurveyCalendar(
+  offerId: string,
+  info: {
+    startsAt: Date;
+    endsAt: Date;
+    status: string;
+    eventId: string | null;
+    eventLink: string | null;
+  }
+): Promise<void> {
+  await sql`
+    UPDATE booking_offers SET
+      survey_starts_at = ${info.startsAt.toISOString()},
+      survey_ends_at = ${info.endsAt.toISOString()},
+      calendar_status = ${info.status},
+      calendar_event_id = ${info.eventId},
+      calendar_event_link = ${info.eventLink}
+    WHERE id = ${offerId}
+  `;
+}
+
+/**
  * Create a media capture record
  */
 export async function createMediaCapture(params: {

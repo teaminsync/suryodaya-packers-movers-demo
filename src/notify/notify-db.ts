@@ -100,17 +100,16 @@ const notifier = createNotifier({
   },
 });
 
-async function notifyLead(input: {
-  type: AdminEventType;
-  leadId: string;
-  lastMessage?: string | null;
-  slotLabel?: string | null;
-}): Promise<void> {
-  const lead = await findLeadById(input.leadId);
+/**
+ * Load lead and contact data for admin event base
+ */
+export async function loadAdminEventBase(
+  leadId: string
+): Promise<Omit<AdminEvent, "type" | "lastMessage" | "slotLabel"> | null> {
+  const lead = await findLeadById(leadId);
 
   if (!lead) {
-    console.log(`[Notify] Lead ${input.leadId} not found`);
-    return;
+    return null;
   }
 
   const contact = await loadContact(lead.contact_id);
@@ -140,11 +139,8 @@ async function notifyLead(input: {
     } catch {}
   }
 
-  const lastMessage = input.lastMessage?.trim() || null;
-
-  const event: AdminEvent = {
-    type: input.type,
-    leadId: input.leadId,
+  return {
+    leadId: lead.id,
     source: lead.source,
     customerName,
     phone,
@@ -154,6 +150,27 @@ async function notifyLead(input: {
     estimatedVolume: lead.estimated_volume,
     urgency: lead.urgency,
     specialItems,
+  };
+}
+
+async function notifyLead(input: {
+  type: AdminEventType;
+  leadId: string;
+  lastMessage?: string | null;
+  slotLabel?: string | null;
+}): Promise<void> {
+  const base = await loadAdminEventBase(input.leadId);
+
+  if (!base) {
+    console.log(`[Notify] Lead ${input.leadId} not found`);
+    return;
+  }
+
+  const lastMessage = input.lastMessage?.trim() || null;
+
+  const event: AdminEvent = {
+    ...base,
+    type: input.type,
     lastMessage,
     slotLabel: input.slotLabel || null,
   };

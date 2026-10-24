@@ -8,6 +8,25 @@ import { COMPANY_PROFILE } from "../company/profile.js";
 import type { AIRequest } from "../ai/types.js";
 import type { SlotOption } from "../leads/types.js";
 
+export const NO_SLOTS_MESSAGE =
+  "I'm sorry, I couldn't find any open survey times right now. A team member will contact you shortly to arrange a time.";
+
+export function buildFreshSlotsMessage(
+  slots: Array<{ label: string }>,
+  reason: "stale" | "taken"
+): string {
+  const lead =
+    reason === "stale"
+      ? "Those times have already passed. Here are fresh survey times:"
+      : "Sorry, that time has just been taken. Here are other survey times:";
+
+  const slotsList = slots
+    .map((s, i) => `${i + 1}. ${s.label}`)
+    .join("\n");
+
+  return `${lead}\n\n${slotsList}\n\nReply with the number of your preferred time.`;
+}
+
 const slotMessageSchema = z.object({
   message: z.string(),
 });

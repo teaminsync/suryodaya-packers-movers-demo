@@ -69,6 +69,26 @@ async function initSchema(): Promise<void> {
   `;
 
   await sql`
+    ALTER TABLE booking_offers ADD COLUMN IF NOT EXISTS survey_starts_at TIMESTAMPTZ
+  `;
+
+  await sql`
+    ALTER TABLE booking_offers ADD COLUMN IF NOT EXISTS survey_ends_at TIMESTAMPTZ
+  `;
+
+  await sql`
+    ALTER TABLE booking_offers ADD COLUMN IF NOT EXISTS calendar_status TEXT
+  `;
+
+  await sql`
+    ALTER TABLE booking_offers ADD COLUMN IF NOT EXISTS calendar_event_id TEXT
+  `;
+
+  await sql`
+    ALTER TABLE booking_offers ADD COLUMN IF NOT EXISTS calendar_event_link TEXT
+  `;
+
+  await sql`
     CREATE TABLE IF NOT EXISTS media_captures (
       id TEXT PRIMARY KEY,
       lead_id TEXT NOT NULL REFERENCES leads(id),

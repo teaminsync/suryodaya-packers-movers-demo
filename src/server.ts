@@ -101,4 +101,11 @@ app.listen(PORT, async () => {
   } catch (error) {
     console.log("[Notify] Could not read alert settings:", error instanceof Error ? error.message : String(error));
   }
+
+  try {
+    const { describeCalendar } = await import("./calendar/calendar-db.js");
+    console.log("[Calendar] Survey scheduling:", describeCalendar());
+  } catch (error) {
+    console.log("[Calendar] Setup error:", error instanceof Error ? error.message : String(error));
+  }
 });
