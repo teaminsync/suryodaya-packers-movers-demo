@@ -3,6 +3,8 @@
  */
 
 import type { InstagramDeps } from "./handler.js";
+
+const ensureProfileAttempts = new Map<string, number>();
 import {
   isMessageProcessed,
   markMessageProcessed,
@@ -21,7 +23,7 @@ import { processConversationTurn } from "../flows/qualification.js";
 import { buildKnownInfo } from "../flows/known-info.js";
 import { instagramClient } from "./client.js";
 import { splitForInstagram } from "./messages.js";
-import { setDisplayNameIfMissing } from "../leads/contacts.js";
+import { setInstagramProfileIfMissing } from "../leads/contacts.js";
 import { sql } from "../leads/db.js";
 import { outreachDeps } from "../outreach/service-db.js";
 import { withRetry } from "../outreach/retry.js";
@@ -62,23 +64,33 @@ export const instagramDeps: InstagramDeps = {
       intakeDeps
     );
 
+    const contactNeedsProfile = !resolved.contact.instagram_username || resolved.contact.instagram_username.trim() === "";
+
     return {
       leadId: resolved.lead.id,
       contactId: resolved.contact.id,
+      contactNeedsProfile,
       status: resolved.lead.status,
       humanTakeover: resolved.lead.human_takeover,
       createdEnquiry: resolved.createdEnquiry,
     };
   },
 
-  async ensureDisplayName(contactId: string, igsid: string) {
+  async ensureProfile(contactId: string, igsid: string) {
+    const profileAttempts = ensureProfileAttempts;
+    const lastAttempt = profileAttempts.get(igsid) ?? 0;
+    const now = Date.now();
+    
+    if (now - lastAttempt < 10 * 60 * 1000) {
+      return;
+    }
+    
+    profileAttempts.set(igsid, now);
+    
     const profile = await instagramClient.getProfile(igsid);
 
-    if (profile) {
-      const displayName = profile.name || profile.username;
-      if (displayName) {
-        await setDisplayNameIfMissing(contactId, displayName);
-      }
+    if (profile && (profile.name || profile.username)) {
+      await setInstagramProfileIfMissing(contactId, profile);
     }
   },
 

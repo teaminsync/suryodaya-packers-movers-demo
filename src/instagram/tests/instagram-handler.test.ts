@@ -27,13 +27,14 @@ function makeDeps(overrides: Partial<InstagramDeps> = {}): InstagramDeps & { cal
       return {
         leadId: "l1",
         contactId: "c1",
+        contactNeedsProfile: false,
         status: "new",
         humanTakeover: false,
         createdEnquiry: false,
       };
     },
-    async ensureDisplayName() {
-      calls.push({ fn: "ensureDisplayName", args: Array.from(arguments) });
+    async ensureProfile() {
+      calls.push({ fn: "ensureProfile", args: Array.from(arguments) });
     },
     async logMessage() {
       calls.push({ fn: "logMessage", args: Array.from(arguments) });
@@ -407,59 +408,59 @@ describe("handleInstagramMessage", () => {
     expect(deps.calls.find((c) => c.fn === "setStatus")?.args).toEqual(["l1", "booking_offered"]);
   });
 
-  it("calls ensureDisplayName when enquiry is created and handles throw", async () => {
-    const deps1 = makeDeps({
+  it("calls ensureProfile when contactNeedsProfile true", async () => {
+    const deps = makeDeps({
       async resolveEnquiry() {
-        deps1.calls.push({ fn: "resolveEnquiry", args: Array.from(arguments) });
+        deps.calls.push({ fn: "resolveEnquiry", args: Array.from(arguments) });
         return {
           leadId: "l1",
           contactId: "c1",
+          contactNeedsProfile: true,
           status: "new",
-          humanTakeover: false,
-          createdEnquiry: true,
-        };
-      },
-    });
-
-    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "hi", attachmentType: null };
-    await handleInstagramMessage(event, deps1, now);
-
-    expect(deps1.calls.find((c) => c.fn === "ensureDisplayName")?.args).toEqual(["c1", "IG1"]);
-
-    const deps2 = makeDeps({
-      async resolveEnquiry() {
-        deps2.calls.push({ fn: "resolveEnquiry", args: Array.from(arguments) });
-        return {
-          leadId: "l1",
-          contactId: "c1",
-          status: "new",
-          humanTakeover: false,
-          createdEnquiry: true,
-        };
-      },
-      async ensureDisplayName() {
-        deps2.calls.push({ fn: "ensureDisplayName", args: Array.from(arguments) });
-        throw new Error("profile fetch failed");
-      },
-    });
-
-    const result2 = await handleInstagramMessage(event, deps2, now);
-    expect(result2.status).toBe("replied");
-
-    const deps3 = makeDeps({
-      async resolveEnquiry() {
-        deps3.calls.push({ fn: "resolveEnquiry", args: Array.from(arguments) });
-        return {
-          leadId: "l1",
-          contactId: "c1",
-          status: "gathering",
           humanTakeover: false,
           createdEnquiry: false,
         };
       },
     });
 
-    await handleInstagramMessage(event, deps3, now);
-    expect(deps3.calls.find((c) => c.fn === "ensureDisplayName")).toBeFalsy();
+    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "hi", attachmentType: null };
+    await handleInstagramMessage(event, deps, now);
+
+    expect(deps.calls.find((c) => c.fn === "ensureProfile")?.args).toEqual(["c1", "IG1"]);
+  });
+
+  it("does not call ensureProfile when contactNeedsProfile false", async () => {
+    const deps = makeDeps();
+
+    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "hi", attachmentType: null };
+    await handleInstagramMessage(event, deps, now);
+
+    expect(deps.calls.find((c) => c.fn === "ensureProfile")).toBeFalsy();
+  });
+
+  it("handles ensureProfile throw without affecting reply", async () => {
+    const deps = makeDeps({
+      async resolveEnquiry() {
+        deps.calls.push({ fn: "resolveEnquiry", args: Array.from(arguments) });
+        return {
+          leadId: "l1",
+          contactId: "c1",
+          contactNeedsProfile: true,
+          status: "new",
+          humanTakeover: false,
+          createdEnquiry: false,
+        };
+      },
+      async ensureProfile() {
+        deps.calls.push({ fn: "ensureProfile", args: Array.from(arguments) });
+        throw new Error("profile fetch failed");
+      },
+    });
+
+    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "hi", attachmentType: null };
+    const result = await handleInstagramMessage(event, deps, now);
+
+    expect(result.status).toBe("replied");
+    expect(deps.calls.find((c) => c.fn === "ensureProfile")).toBeTruthy();
   });
 });

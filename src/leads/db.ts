@@ -167,6 +167,10 @@ async function initSchema(): Promise<void> {
   `;
 
   await sql`
+    ALTER TABLE contacts ADD COLUMN IF NOT EXISTS instagram_username TEXT
+  `;
+
+  await sql`
     CREATE TABLE IF NOT EXISTS contact_identities (
       id TEXT PRIMARY KEY,
       contact_id TEXT NOT NULL REFERENCES contacts(id),

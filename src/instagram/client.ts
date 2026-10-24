@@ -65,16 +65,26 @@ export function createInstagramClient(config: InstagramClientConfig) {
         });
 
         if (!response.ok) {
-          console.log("[Instagram Client] Profile fetch failed:", response.status);
+          const bodyText = await response.text();
+          console.log("[Instagram Client] Profile fetch failed:", {
+            status: response.status,
+            body: bodyText.substring(0, 200)
+          });
           return null;
         }
 
         const data = await response.json() as { name?: unknown; username?: unknown };
-        return {
-          name: typeof data.name === "string" ? data.name : null,
-          username: typeof data.username === "string" ? data.username : null,
-        };
-      } catch {
+        
+        const name = typeof data.name === "string" && data.name.trim() !== "" ? data.name.trim() : null;
+        const username = typeof data.username === "string" && data.username.trim() !== "" ? data.username.trim() : null;
+        
+        if (name === null && username === null) {
+          return null;
+        }
+        
+        return { name, username };
+      } catch (error) {
+        console.log("[Instagram Client] Profile fetch error:", error instanceof Error ? error.message : String(error));
         return null;
       }
     },

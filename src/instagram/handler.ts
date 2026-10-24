@@ -35,11 +35,12 @@ export interface InstagramDeps {
   }): Promise<{
     leadId: string;
     contactId: string;
+    contactNeedsProfile: boolean;
     status: string;
     humanTakeover: boolean;
     createdEnquiry: boolean;
   }>;
-  ensureDisplayName(contactId: string, igsid: string): Promise<void>;
+  ensureProfile(contactId: string, igsid: string): Promise<void>;
   logMessage(input: {
     leadId: string;
     mid: string;
@@ -115,12 +116,12 @@ export async function handleInstagramMessage(
     forceAttachToLatest: isStop,
   });
 
-  if (resolved.createdEnquiry) {
+  if (resolved.contactNeedsProfile) {
     try {
-      await deps.ensureDisplayName(resolved.contactId, event.igsid);
+      await deps.ensureProfile(resolved.contactId, event.igsid);
     } catch (error) {
       console.log(
-        "[Instagram] Display name fetch failed:",
+        "[Instagram] Profile lookup failed:",
         error instanceof Error ? error.message : String(error)
       );
     }

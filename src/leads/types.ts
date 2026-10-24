@@ -59,6 +59,7 @@ export interface Contact {
   id: string;
   phone_e164: string | null;
   display_name: string | null;
+  instagram_username: string | null;
   created_at: string;
   updated_at: string;
 }

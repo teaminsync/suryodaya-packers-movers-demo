@@ -104,6 +104,20 @@ async function send() {
   console.log(JSON.stringify(data, null, 2));
 }
 
+async function profile() {
+  const args = process.argv.slice(3);
+  const igsidArg = args.find((a) => a.startsWith("--igsid="));
+
+  if (!igsidArg) {
+    console.error("Usage: profile --igsid=<id>");
+    process.exit(1);
+  }
+
+  const igsid = igsidArg.split("=")[1];
+  const data = await callApi(`${igsid}?fields=name,username`);
+  console.log(JSON.stringify(data, null, 2));
+}
+
 switch (command) {
   case "me":
     await me();
@@ -114,7 +128,10 @@ switch (command) {
   case "send":
     await send();
     break;
+  case "profile":
+    await profile();
+    break;
   default:
-    console.error("Unknown command. Available: me, conversations, send");
+    console.error("Unknown command. Available: me, conversations, send, profile");
     process.exit(1);
 }

@@ -136,3 +136,18 @@ export async function setDisplayNameIfMissing(
     WHERE id = ${contactId}
   `;
 }
+
+export async function setInstagramProfileIfMissing(
+  contactId: string,
+  profile: { name: string | null; username: string | null }
+): Promise<void> {
+  const now = new Date().toISOString();
+
+  await sql`
+    UPDATE contacts
+    SET display_name = COALESCE(display_name, ${profile.name}),
+        instagram_username = COALESCE(instagram_username, ${profile.username}),
+        updated_at = ${now}
+    WHERE id = ${contactId}
+  `;
+}
