@@ -90,8 +90,11 @@ app.use((err: unknown, req: express.Request, res: express.Response, _next: expre
 });
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`\u2705 Server listening on port ${PORT}`);
   console.log(`Webhook URL: http://localhost:${PORT}/webhook`);
   console.log(`Health check: http://localhost:${PORT}/health`);
+  
+  const { describeNotifyChannels } = await import("./notify/notify-db.js");
+  console.log("[Notify] Admin alerts:", describeNotifyChannels());
 });

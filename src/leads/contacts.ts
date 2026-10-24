@@ -151,3 +151,11 @@ export async function setInstagramProfileIfMissing(
     WHERE id = ${contactId}
   `;
 }
+
+export async function findContactById(contactId: string): Promise<Contact | undefined> {
+  const result = await sql<Contact[]>`
+    SELECT * FROM contacts WHERE id = ${contactId}
+  `;
+
+  return result[0];
+}

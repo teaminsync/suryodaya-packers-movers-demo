@@ -254,6 +254,22 @@ async function initSchema(): Promise<void> {
   `;
 
   await sql`
+    CREATE TABLE IF NOT EXISTS admin_notifications (
+      id TEXT PRIMARY KEY,
+      lead_id TEXT NOT NULL REFERENCES leads(id),
+      event_type TEXT NOT NULL,
+      channel TEXT NOT NULL,
+      status TEXT NOT NULL,
+      detail TEXT,
+      created_at TIMESTAMPTZ NOT NULL
+    )
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_admin_notifications_lead_event ON admin_notifications(lead_id, event_type, created_at)
+  `;
+
+  await sql`
     CREATE TABLE IF NOT EXISTS intake_rejects (
       id TEXT PRIMARY KEY,
       source TEXT NOT NULL,
@@ -281,8 +297,9 @@ BEGIN
     ALTER TABLE touchpoints ENABLE ROW LEVEL SECURITY;
     ALTER TABLE consents ENABLE ROW LEVEL SECURITY;
     ALTER TABLE intake_rejects ENABLE ROW LEVEL SECURITY;
-    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents, intake_rejects FROM anon;
-    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents, intake_rejects FROM authenticated;
+    ALTER TABLE admin_notifications ENABLE ROW LEVEL SECURITY;
+    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents, intake_rejects, admin_notifications FROM anon;
+    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents, intake_rejects, admin_notifications FROM authenticated;
     GRANT SELECT ON TABLE messages TO authenticated;
     IF NOT EXISTS (
       SELECT 1 FROM pg_policies
