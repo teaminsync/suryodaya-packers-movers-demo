@@ -3,14 +3,15 @@
  */
 
 import { toIstParts, istToUtc, addDaysToDateKey, formatSlotLabel } from "./ist.js";
+export { formatSlotLabel } from "./ist.js";
 import type { SurveyConfig } from "./config.js";
 
-export interface Slot {
+export interface BusyInterval {
   start: Date;
   end: Date;
 }
 
-interface BusyInterval {
+export interface Slot {
   start: Date;
   end: Date;
 }

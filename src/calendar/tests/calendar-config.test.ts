@@ -109,4 +109,48 @@ describe("Calendar config", () => {
     expect(warnings.length).toBe(1);
     expect(warnings[0]).toContain("Break outside work hours");
   });
+
+  it("SURVEY_BREAK_START invalid with valid SURVEY_BREAK_END uses default start", () => {
+    const env = {
+      SURVEY_BREAK_START: "abc",
+      SURVEY_BREAK_END: "14:00",
+    };
+    const { config, warnings } = parseSurveyConfig(env);
+    expect(config.breakStartMin).toBe(780);
+    expect(config.breakEndMin).toBe(840);
+    expect(warnings.length).toBe(1);
+    expect(warnings[0]).toContain("SURVEY_BREAK_START invalid");
+    expect(warnings[0]).toContain('"abc"');
+  });
+
+  it("only SURVEY_BREAK_END provided uses default start", () => {
+    const env = {
+      SURVEY_BREAK_END: "15:00",
+    };
+    const { config, warnings } = parseSurveyConfig(env);
+    expect(config.breakStartMin).toBe(780);
+    expect(config.breakEndMin).toBe(900);
+    expect(warnings).toEqual([]);
+  });
+
+  it("SURVEY_BREAK_END none alone disables break", () => {
+    const env = {
+      SURVEY_BREAK_END: "none",
+    };
+    const { config, warnings } = parseSurveyConfig(env);
+    expect(config.breakStartMin).toBeNull();
+    expect(config.breakEndMin).toBeNull();
+    expect(warnings).toEqual([]);
+  });
+
+  it("empty strings for both break times use defaults", () => {
+    const env = {
+      SURVEY_BREAK_START: "",
+      SURVEY_BREAK_END: "",
+    };
+    const { config, warnings } = parseSurveyConfig(env);
+    expect(config.breakStartMin).toBe(DEFAULT_SURVEY_CONFIG.breakStartMin);
+    expect(config.breakEndMin).toBe(DEFAULT_SURVEY_CONFIG.breakEndMin);
+    expect(warnings).toEqual([]);
+  });
 });

@@ -75,7 +75,7 @@ describe("Calendar auth", () => {
     expect(parts.length).toBe(3);
 
     const header = JSON.parse(Buffer.from(parts[0], "base64url").toString());
-    expect(header.alg).toBe("RSA-SHA256");
+    expect(header.alg).toBe("RS256");
     expect(header.typ).toBe("JWT");
 
     const claims = JSON.parse(Buffer.from(parts[1], "base64url").toString());
@@ -91,31 +91,6 @@ describe("Calendar auth", () => {
   });
 
   it("caches token and reuses it within expiry window", async () => {
-    let callCount = 0;
-
-    const mockFetch: typeof fetch = async () => {
-      callCount++;
-      return {
-        ok: true,
-        json: async () => ({ access_token: `token-${callCount}`, expires_in: 3600 }),
-      } as Response;
-    };
-
-    const auth = createGoogleAuth({
-      account,
-      fetchFn: mockFetch,
-      now: () => new Date("2026-10-20T10:00:00.000Z"),
-    });
-
-    const token1 = await auth.getAccessToken();
-    const token2 = await auth.getAccessToken();
-
-    expect(callCount).toBe(1);
-    expect(token1).toBe(token2);
-    expect(token1).toBe("token-1");
-  });
-
-  it("fetches new token after expiry minus 60 seconds", async () => {
     let callCount = 0;
     let currentTime = new Date("2026-10-20T10:00:00.000Z");
 
@@ -133,20 +108,28 @@ describe("Calendar auth", () => {
       now: () => currentTime,
     });
 
+    // First call at 10:00:00
     const token1 = await auth.getAccessToken();
     expect(callCount).toBe(1);
+    expect(token1).toBe("token-1");
 
-    // Advance to 59 minutes later (still in cache window)
-    currentTime = new Date("2026-10-20T10:59:00.000Z");
+    // Second call at 10:58:00 (58 minutes later, still strictly before expiry-60)
+    currentTime = new Date("2026-10-20T10:58:00.000Z");
     const token2 = await auth.getAccessToken();
     expect(callCount).toBe(1);
     expect(token2).toBe(token1);
 
-    // Advance to 61 minutes later (past expiry minus 60s)
-    currentTime = new Date("2026-10-20T11:01:00.000Z");
+    // Third call at 10:59:00 exactly (59 minutes = expiry-60, NOT strictly before, so new request)
+    currentTime = new Date("2026-10-20T10:59:00.000Z");
     const token3 = await auth.getAccessToken();
     expect(callCount).toBe(2);
     expect(token3).toBe("token-2");
+
+    // Fourth call at 10:59:30 after refresh at 10:59:00 (reuses new token)
+    currentTime = new Date("2026-10-20T10:59:30.000Z");
+    const token4 = await auth.getAccessToken();
+    expect(callCount).toBe(2);
+    expect(token4).toBe("token-2");
   });
 
   it("throws on 401 response and does not include private key in message", async () => {

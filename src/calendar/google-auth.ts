@@ -30,7 +30,7 @@ function createJWT(
   scope: string,
   iat: number
 ): string {
-  const header = { alg: "RSA-SHA256", typ: "JWT" };
+  const header = { alg: "RS256", typ: "JWT" };
   const claims = {
     iss: account.client_email,
     scope,
@@ -58,7 +58,7 @@ export function createGoogleAuth(deps: AuthDeps): { getAccessToken(): Promise<st
     const nowSec = Math.floor(deps.now().getTime() / 1000);
 
     // Use cached token if still valid (with 60s buffer)
-    if (cachedToken && nowSec <= expiresAt - 60) {
+    if (cachedToken && nowSec < expiresAt - 60) {
       return cachedToken;
     }
 

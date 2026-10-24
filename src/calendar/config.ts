@@ -50,7 +50,7 @@ function parseNumber(
 }
 
 function parseTimeToMinutes(value: string | undefined): number | null {
-  if (!value || value.trim() === "" || value.trim().toLowerCase() === "none") {
+  if (!value || value.trim() === "") {
     return null;
   }
   const parts = value.split(":");
@@ -174,40 +174,52 @@ export function parseSurveyConfig(
     );
   }
 
-  const breakStartMinRaw = parseTimeToMinutes(env.SURVEY_BREAK_START);
-  const breakEndMinRaw = parseTimeToMinutes(env.SURVEY_BREAK_END);
+  const rawStart = (env.SURVEY_BREAK_START ?? "").trim();
+  const rawEnd = (env.SURVEY_BREAK_END ?? "").trim();
 
-  let breakStartMin: number | null = DEFAULT_SURVEY_CONFIG.breakStartMin;
-  let breakEndMin: number | null = DEFAULT_SURVEY_CONFIG.breakEndMin;
+  let breakStartMin: number | null;
+  let breakEndMin: number | null;
 
-  // Only disable break if explicitly set to "none" or if one is provided but the other isn't
-  const hasBreakStart = env.SURVEY_BREAK_START !== undefined && env.SURVEY_BREAK_START.trim() !== "";
-  const hasBreakEnd = env.SURVEY_BREAK_END !== undefined && env.SURVEY_BREAK_END.trim() !== "";
-
-  if (hasBreakStart && breakStartMinRaw === null) {
-    // Explicit "none" or invalid for start
+  if (rawStart.toLowerCase() === "none" || rawEnd.toLowerCase() === "none") {
     breakStartMin = null;
     breakEndMin = null;
-  } else if (hasBreakEnd && breakEndMinRaw === null) {
-    // Explicit "none" or invalid for end
-    breakStartMin = null;
-    breakEndMin = null;
-  } else if (hasBreakStart && hasBreakEnd && breakStartMinRaw !== null && breakEndMinRaw !== null) {
-    // Both provided and valid, check if within work hours
-    if (
-      breakStartMinRaw >= finalWorkStart &&
-      breakEndMinRaw <= finalWorkEnd &&
-      breakEndMinRaw > breakStartMinRaw
-    ) {
-      breakStartMin = breakStartMinRaw;
-      breakEndMin = breakEndMinRaw;
+  } else if (rawStart === "" && rawEnd === "") {
+    // Both empty, use defaults with no validation and no warning
+    breakStartMin = DEFAULT_SURVEY_CONFIG.breakStartMin;
+    breakEndMin = DEFAULT_SURVEY_CONFIG.breakEndMin;
+  } else {
+    // At least one is non-empty
+    let start = 780; // default 13:00
+    let end = 840; // default 14:00
+
+    if (rawStart !== "") {
+      const parsed = parseTimeToMinutes(rawStart);
+      if (parsed === null) {
+        warnings.push(`SURVEY_BREAK_START invalid ("${rawStart}"), using default 13:00`);
+      } else {
+        start = parsed;
+      }
+    }
+
+    if (rawEnd !== "") {
+      const parsed = parseTimeToMinutes(rawEnd);
+      if (parsed === null) {
+        warnings.push(`SURVEY_BREAK_END invalid ("${rawEnd}"), using default 14:00`);
+      } else {
+        end = parsed;
+      }
+    }
+
+    // Validate only when at least one was provided
+    if (start >= finalWorkStart && end <= finalWorkEnd && end > start) {
+      breakStartMin = start;
+      breakEndMin = end;
     } else {
-      warnings.push(
-        `Break outside work hours or invalid, using defaults ${DEFAULT_SURVEY_CONFIG.breakStartMin} and ${DEFAULT_SURVEY_CONFIG.breakEndMin}`
-      );
+      warnings.push("Break outside work hours or invalid, using defaults 13:00 and 14:00");
+      breakStartMin = 780;
+      breakEndMin = 840;
     }
   }
-  // else: neither provided, use defaults (already set above)
 
   const stepMinutes = parseNumber(
     env.SURVEY_SLOT_STEP_MINUTES,

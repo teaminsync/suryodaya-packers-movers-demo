@@ -2,10 +2,7 @@
  * Google Calendar API client
  */
 
-export interface BusyInterval {
-  start: Date;
-  end: Date;
-}
+import type { BusyInterval } from "./slots.js";
 
 interface CalendarDeps {
   calendarId: string;
@@ -64,7 +61,11 @@ export function createCalendarClient(deps: CalendarDeps) {
     }
 
     const json = (await response.json()) as FreeBusyResponse;
-    const cal = json.calendars[deps.calendarId];
+    const cal = json.calendars?.[deps.calendarId];
+
+    if (!cal) {
+      throw new Error("Google freeBusy error: no data for calendar");
+    }
 
     if (cal.errors && cal.errors.length > 0) {
       throw new Error(`Google freeBusy error: ${cal.errors[0].reason}`);

@@ -120,6 +120,38 @@ describe("Calendar client", () => {
     }
   });
 
+  it("freeBusy throws when calendar entry is missing", async () => {
+    const mockFetch: typeof fetch = async () => {
+      return {
+        ok: true,
+        json: async () => ({
+          calendars: {
+            "different@calendar.com": {
+              busy: [],
+            },
+          },
+        }),
+      } as Response;
+    };
+
+    const client = createCalendarClient({
+      calendarId: "test@calendar.com",
+      getAccessToken: getToken,
+      fetchFn: mockFetch,
+    });
+
+    try {
+      await client.freeBusy(
+        new Date("2026-10-20T00:00:00.000Z"),
+        new Date("2026-10-21T00:00:00.000Z")
+      );
+      expect(true).toBe(false); // should have thrown
+    } catch (error) {
+      const msg = (error as Error).message;
+      expect(msg).toBe("Google freeBusy error: no data for calendar");
+    }
+  });
+
   it("insertEvent sends correct request with location", async () => {
     let capturedUrl = "";
     let capturedMethod = "";
