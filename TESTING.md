@@ -18,13 +18,13 @@ This document contains instructions for running the **REAL API tests** required 
 
 2. Set up your `.env` file based on which tests you're running (see below)
 
-## Test 6.1: Live Gemini (DEMO Mode)
+## Test 6.1: Live Gemini
 
-**Purpose**: Prove Gemini works standalone in DEMO mode
+**Purpose**: Verify Gemini standalone operation
 
 **Requirements**:
 - `GEMINI_API_KEY` must be set
-- `ANTHROPIC_API_KEY` must NOT be set (or be invalid)
+- Can run with or without other provider keys
 
 **Setup**:
 ```bash
@@ -42,19 +42,19 @@ npm run test:live:gemini
 ```
 
 **What to paste back**:
-1. The startup log line showing "AI mode: DEMO"
+1. The startup log showing provider configuration
 2. Full terminal output for both tests (text-only and vision)
 3. The structured log lines for each call
 4. Confirmation of `providerUsed: "gemini"` and `wasFailover: false`
 
 ---
 
-## Test 6.2: Live Claude (PRODUCTION Mode)
+## Test 6.2: Live Claude
 
-**Purpose**: Prove Claude works and that valid key enables PRODUCTION mode
+**Purpose**: Verify Claude operation and failover availability
 
 **Requirements**:
-- `GEMINI_API_KEY` must be set (fallback provider)
+- `GEMINI_API_KEY` must be set (failover provider)
 - `ANTHROPIC_API_KEY` must be set **and valid**
 
 **Setup**:
@@ -73,25 +73,25 @@ npm run test:live:claude
 ```
 
 **What to paste back**:
-1. The startup log line showing "AI mode: PRODUCTION (Anthropic key validated...)"
+1. The startup log showing provider configuration
 2. Full terminal output for both tests (text-only and vision)
 3. The structured log lines for each call
 4. Confirmation of `providerUsed: "claude"` and `wasFailover: false`
 
 ---
 
-## Test 6.3: Forced Failover (PRODUCTION Mode)
+## Test 6.3: Forced Failover
 
-**Purpose**: Prove the failover mechanism actually works when Claude fails
+**Purpose**: Verify failover mechanism when primary provider fails
 
 **Requirements**:
-- Same setup as 6.2 (PRODUCTION mode)
+- Same setup as 6.2 (valid keys for Claude and Gemini)
 - Test will **temporarily corrupt** `CLAUDE_MODEL` to force failure
 - Test will restore the original value after running
 
 **Setup**:
 ```bash
-# Same as Test 6.2 - start with valid keys in PRODUCTION mode
+# Same as Test 6.2 - start with valid keys
 GEMINI_API_KEY=your_actual_gemini_key
 ANTHROPIC_API_KEY=your_actual_anthropic_key
 CLAUDE_MODEL=claude-sonnet-5
@@ -103,7 +103,7 @@ npm run test:live:failover
 ```
 
 **Expected behavior**:
-1. Router initializes in PRODUCTION mode (Claude primary, Gemini fallback)
+1. Router initializes with Claude and Gemini configured
 2. Test corrupts `CLAUDE_MODEL` to trigger a Claude API error (404/400)
 3. Router logs the Claude failure
 4. Router automatically tries Gemini
@@ -111,7 +111,7 @@ npm run test:live:failover
 6. Test restores original `CLAUDE_MODEL`
 
 **What to paste back**:
-1. The startup log showing PRODUCTION mode
+1. The startup log showing provider configuration
 2. The warning log showing corrupted CLAUDE_MODEL
 3. The full log sequence showing:
    - Claude failure (with reason)
@@ -141,14 +141,14 @@ No special setup needed - these always pass if the router logic is correct.
 - Or you're running tests without the `.env` file loaded
 
 ### "Expected PRODUCTION mode, got DEMO"
-- Your `ANTHROPIC_API_KEY` is not set, invalid, or failed validation
-- Check the API key is correct and has permissions
+- This test is outdated and refers to old router logic that used DEMO/PRODUCTION modes
+- Modern router uses chain configuration instead
 - Check the startup log for validation failure details
 
 ### "All AI providers failed"
-- Both providers failed (in PRODUCTION mode)
-- Check both API keys are valid
-- Check you have API credits remaining
+- All configured providers failed (when multiple providers are available)
+- Check all API keys are valid
+- Check you have API credits remaining for each provider
 - Check network connectivity
 
 ### Test hangs / times out

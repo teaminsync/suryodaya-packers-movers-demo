@@ -52,13 +52,6 @@ export class AIRouter {
       return;
     }
 
-    const forceProvider = process.env.AI_FORCE_PROVIDER;
-    if (forceProvider) {
-      console.warn(
-        `[AI Router] AI_FORCE_PROVIDER is no longer supported and is ignored (was: "${forceProvider}")`
-      );
-    }
-
     // Gather API keys
     const keys = {
       claude: !!process.env.ANTHROPIC_API_KEY,

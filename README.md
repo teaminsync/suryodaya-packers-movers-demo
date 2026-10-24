@@ -7,8 +7,9 @@ Provider-agnostic AI layer with automatic failover for a moving company automati
 This project implements a **provider-agnostic AI layer** that automatically switches between Claude (Anthropic) and Gemini (Google) based on available API keys, backed by **Supabase Postgres** for persistent data storage:
 
 ### AI Layer
-- **DEMO mode**: Gemini primary, no fallback (no Anthropic key required)
-- **PRODUCTION mode**: Claude primary, Gemini fallback (Anthropic key validated at startup)
+- Provider-agnostic design with automatic provider selection based on available API keys and chain configuration
+- Supports Claude (Anthropic), Gemini (Google), and Groq (text and vision)
+- Configure provider priority using AI_TEXT_CHAIN and AI_IMAGE_CHAIN settings
 
 The system uses TypeScript for strong typing across provider adapters, ensuring consistent request/response shapes and catching schema drift at compile time.
 
@@ -47,18 +48,15 @@ GEMINI_API_KEY=your_gemini_key_here
 GEMINI_MODEL=gemini-3.6-flash
 ```
 
-#### Optional (enables PRODUCTION mode):
+#### Optional (enables additional providers and custom chains):
 ```
 ANTHROPIC_API_KEY=your_anthropic_key_here
 CLAUDE_MODEL=claude-sonnet-5
+GROQ_API_KEY=your_groq_key_here
+# Comma-separated provider chains (auto-selected from available keys if not specified)
+AI_TEXT_CHAIN=groq,gemini,claude
+AI_IMAGE_CHAIN=groq,gemini,claude
 ```
-
-#### Optional override (for local dev cost control):
-```
-AI_FORCE_PROVIDER=gemini
-```
-
-**Note**: Only `gemini` is supported - used to avoid Claude API costs during development when a valid Anthropic key exists. Leave blank for automatic mode detection.
 
 #### Database (required):
 ```
@@ -88,7 +86,7 @@ npm start
 
 ## Testing
 
-**Current status**: `ANTHROPIC_API_KEY` is present but deliberately unbilled (billing deferred until a paying client is confirmed). Tests 6.2 (live-claude-fallback) and 6.3 (forced-failover) will show DEMO mode / validation failure, which is expected behavior, not a regression. Test 6.1 (live-gemini) remains the primary validation test.
+**Current status**: Live tests are available for Gemini, Claude, and failover scenarios. Tests verify AI provider configuration and chain behavior.
 
 ### Unit Tests (mocked providers)
 ```bash
@@ -99,12 +97,12 @@ npm run test:unit
 
 **Important**: Live tests make real API calls and consume API credits. Only run when explicitly needed.
 
-#### Test 6.1: Gemini in DEMO mode
+#### Test 6.1: Live Gemini
 ```bash
 npm run test:live:gemini
 ```
 
-#### Test 6.2: Claude in PRODUCTION mode
+#### Test 6.2: Live Claude
 ```bash
 npm run test:live:claude
 ```
@@ -180,27 +178,25 @@ console.log(response.providerUsed);  // "claude" or "gemini"
 console.log(response.wasFailover);   // true if fallback was used
 ```
 
-## Mode Detection Logic
+## Provider Selection Logic
 
-The router automatically detects which mode to run in:
+The router automatically selects providers based on available API keys and chain configuration:
 
-1. **Manual override** (if `AI_FORCE_PROVIDER` is set): Use specified provider, bypass auto-detection
-2. **Auto-detection** (default):
-   - If `ANTHROPIC_API_KEY` is present and validates → **PRODUCTION mode** (Claude primary, Gemini fallback)
-   - If no valid Anthropic key → **DEMO mode** (Gemini primary, no fallback)
+1. **Chain configuration** (if `AI_TEXT_CHAIN` or `AI_IMAGE_CHAIN` are set): Uses the specified provider order
+2. **Auto-detection** (default): Selects available providers based on which API keys are configured
 
 ## Failover Behavior
 
-### PRODUCTION Mode (Claude primary, Gemini fallback)
-- Try Claude first
+### With Multiple Providers Configured
+- Try the first provider in the chain
 - On failure (HTTP error, timeout, or schema validation failure):
   - Log specific failure reason
-  - Automatically invoke Gemini
+  - Automatically invoke the next provider in the chain
   - Return response with `wasFailover: true`
-- If both fail: throw `AIAllProvidersFailed` with both error details
+- If all providers fail: throw `AIAllProvidersFailed` with all error details
 
-### DEMO Mode (Gemini primary, no fallback)
-- Try Gemini
+### Single Provider Configured
+- Try the configured provider
 - On failure: throw error (no fallback available)
 
 ## Logging

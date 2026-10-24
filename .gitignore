@@ -35,3 +35,8 @@ test-*.jpg
 test-*.jpeg
 test-*.webp
 test-*.mp4
+
+# Google service account keys and private keys (never commit)
+*service-account*.json
+suryodaya-packers-movers-*.json
+*.pem
