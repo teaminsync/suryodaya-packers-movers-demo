@@ -83,6 +83,8 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
   const { isMessageProcessed, markMessageProcessed, unmarkMessageProcessed, mergeLeadFields, setLeadStatus, setLeadEscalated, findOpenBookingOffer, createBookingOffer, recordSlotSelection, createMessage } = await import("../leads/repository.js");
   const { processConversationTurn } = await import("../flows/qualification.js");
   const { promisesTeamFollowUp } = await import("../flows/followup.js");
+  const { looksLikeHumanRequest } = await import("../notify/human-request.js");
+  const { adminNotifier } = await import("../notify/notify-db.js");
   const { generateSlotOptions, buildConfirmationMessage } = await import("../flows/booking.js");
   const { evaluateSlotReply } = await import("../flows/slot-reply.js");
   const { shouldOfferSurveySlots } = await import("../flows/slot-offer-policy.js");
@@ -221,6 +223,14 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
 
             if (interactionId === "talk_human") {
               await setLeadEscalated(lead.id);
+              
+              void adminNotifier.notifyLead({
+                type: "human_requested",
+                leadId: lead.id,
+                lastMessage: "Tapped Talk to a Human",
+                slotLabel: null,
+              }).catch(() => {});
+              
               const ackMessage = "Thank you! A team member from Suryodaya will reach out to you shortly.";
               await whatsappClient.sendMessage(whatsappNumber, ackMessage);
               
@@ -378,6 +388,13 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
                   await whatsappClient.sendMessage(whatsappNumber, confirmMessage);
                   await recordSlotSelection(openOffer.id, selectedSlot.label);
                   await setLeadStatus(lead.id, "booked");
+
+                  void adminNotifier.notifyLead({
+                    type: "booking_confirmed",
+                    leadId: lead.id,
+                    lastMessage: null,
+                    slotLabel: selectedSlot.label,
+                  }).catch(() => {});
 
                   // Log outbound booking confirmation
                   await createMessage({
@@ -726,10 +743,18 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
             }
 
             // Handle escalation request
-            if (turnResult.data.wantsHuman) {
+            const humanRequested = turnResult.data.wantsHuman || looksLikeHumanRequest(messageText);
+            if (humanRequested) {
               await setLeadEscalated(lead.id);
               const escalationMessage = "A team member from Suryodaya will reach out to you shortly.";
               await whatsappClient.sendMessage(whatsappNumber, escalationMessage);
+              
+              void adminNotifier.notifyLead({
+                type: "human_requested",
+                leadId: lead.id,
+                lastMessage: messageText,
+                slotLabel: null,
+              }).catch(() => {});
               
               // Log outbound escalation ack
               await createMessage({
@@ -745,11 +770,18 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
             }
 
             const followUpNeeded =
-              !turnResult.data.wantsHuman &&
+              !humanRequested &&
               (turnResult.data.needsTeamFollowUp || promisesTeamFollowUp(turnResult.data.replyMessage));
             if (followUpNeeded && !lead.escalated) {
               await setLeadEscalated(lead.id);
               console.log("[Webhook] Flagged for team follow-up (reply promised a team confirmation):", { leadId: lead.id, byModel: turnResult.data.needsTeamFollowUp });
+              
+              void adminNotifier.notifyLead({
+                type: "needs_followup",
+                leadId: lead.id,
+                lastMessage: messageText,
+                slotLabel: null,
+              }).catch(() => {});
             }
 
             // Send quick-reply options (if this is a substantive turn)

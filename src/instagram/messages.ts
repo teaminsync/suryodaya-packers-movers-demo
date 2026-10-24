@@ -4,6 +4,7 @@
 
 export const IG_ACK_OPT_OUT = "You have been unsubscribed from messages from Suryodaya Packers & Movers. If you need help with a move later, just message us here.";
 export const IG_ATTACHMENT_REPLY = "Thanks for sharing that. I can only read text messages here, so could you describe your move in a few words (where from, where to and the size of the home)?";
+export const IG_ACK_HUMAN = "A team member from Suryodaya will reach out to you shortly.";
 export const IG_MAX_TEXT_BYTES = 950;
 
 export function splitForInstagram(text: string, maxBytes: number = IG_MAX_TEXT_BYTES): string[] {

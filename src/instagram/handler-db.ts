@@ -194,6 +194,11 @@ export const instagramDeps: InstagramDeps = {
   async setEscalated(leadId: string) {
     await setLeadEscalated(leadId);
   },
+
+  async notifyAdmin(input) {
+    const { adminNotifier } = await import("../notify/notify-db.js");
+    await adminNotifier.notifyLead(input);
+  },
 };
 
 export { getLastInstagramInboundAt as lastInstagramInboundAt };

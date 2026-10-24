@@ -4,7 +4,7 @@
 
 import { handleInstagramMessage } from "../handler.js";
 import type { InstagramDeps } from "../handler.js";
-import { IG_ACK_OPT_OUT } from "../messages.js";
+import { IG_ACK_OPT_OUT, IG_ACK_HUMAN } from "../messages.js";
 
 interface CallRecord {
   fn: string;
@@ -81,6 +81,9 @@ function makeDeps(overrides: Partial<InstagramDeps> = {}): InstagramDeps & { cal
     },
     async setEscalated() {
       calls.push({ fn: "setEscalated", args: Array.from(arguments) });
+    },
+    async notifyAdmin() {
+      calls.push({ fn: "notifyAdmin", args: Array.from(arguments) });
     },
   };
 
@@ -462,5 +465,143 @@ describe("handleInstagramMessage", () => {
 
     expect(result.status).toBe("replied");
     expect(deps.calls.find((c) => c.fn === "ensureProfile")).toBeTruthy();
+  });
+
+  it("calls notifyAdmin for booking_confirmed with slot label", async () => {
+    const slotOptions = [
+      { label: "Mon at 10:00 AM", datetime: new Date(now.getTime() + 86400000).toISOString() },
+      { label: "Tue at 2:00 PM", datetime: new Date(now.getTime() + 2 * 86400000).toISOString() },
+    ];
+
+    const deps = makeDeps({
+      async resolveEnquiry() {
+        deps.calls.push({ fn: "resolveEnquiry", args: Array.from(arguments) });
+        return {
+          leadId: "l1",
+          contactId: "c1",
+          contactNeedsProfile: false,
+          status: "booking_offered",
+          humanTakeover: false,
+          createdEnquiry: false,
+        };
+      },
+      async getOpenOffer() {
+        deps.calls.push({ fn: "getOpenOffer", args: Array.from(arguments) });
+        return { id: "o1", slotOptions: JSON.stringify(slotOptions) };
+      },
+    });
+
+    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "2", attachmentType: null };
+    await handleInstagramMessage(event, deps, now);
+
+    const notifyCall = deps.calls.find((c) => c.fn === "notifyAdmin");
+    expect(notifyCall).toBeTruthy();
+    expect(notifyCall?.args[0]).toMatchObject({
+      type: "booking_confirmed",
+      leadId: "l1",
+      slotLabel: "Tue at 2:00 PM",
+    });
+  });
+
+  it("calls notifyAdmin for wantsHuman and sends ack", async () => {
+    const deps = makeDeps({
+      async runTurn() {
+        deps.calls.push({ fn: "runTurn", args: Array.from(arguments) });
+        return {
+          data: {
+            replyMessage: "Let me connect you",
+            extractedFields: {},
+            wantsToBookSurvey: false,
+            wantsHuman: true,
+            needsTeamFollowUp: false,
+          },
+          providerUsed: "gemini",
+          wasFailover: false,
+        };
+      },
+    });
+
+    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "talk to human", attachmentType: null };
+    await handleInstagramMessage(event, deps, now);
+
+    const notifyCall = deps.calls.find((c) => c.fn === "notifyAdmin");
+    expect(notifyCall).toBeTruthy();
+    expect(notifyCall?.args[0]).toMatchObject({
+      type: "human_requested",
+      leadId: "l1",
+      lastMessage: "talk to human",
+    });
+
+    const sendCalls = deps.calls.filter((c) => c.fn === "sendText");
+    expect(sendCalls.some((c) => c.args[0].text === IG_ACK_HUMAN && c.args[0].senderType === "system")).toBe(true);
+    expect(deps.calls.find((c) => c.fn === "setEscalated")).toBeTruthy();
+  });
+
+  it("calls notifyAdmin for typed human request even when AI says no", async () => {
+    const deps = makeDeps();
+
+    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "connect me to a human", attachmentType: null };
+    await handleInstagramMessage(event, deps, now);
+
+    const notifyCall = deps.calls.find((c) => c.fn === "notifyAdmin");
+    expect(notifyCall?.args[0].type).toBe("human_requested");
+    expect(deps.calls.find((c) => c.fn === "setEscalated")).toBeTruthy();
+
+    const sendCalls = deps.calls.filter((c) => c.fn === "sendText");
+    expect(sendCalls.some((c) => c.args[0].text === IG_ACK_HUMAN)).toBe(true);
+  });
+
+  it("calls notifyAdmin for needsTeamFollowUp", async () => {
+    const deps = makeDeps({
+      async runTurn() {
+        deps.calls.push({ fn: "runTurn", args: Array.from(arguments) });
+        return {
+          data: {
+            replyMessage: "I'll check with the team",
+            extractedFields: {},
+            wantsToBookSurvey: false,
+            wantsHuman: false,
+            needsTeamFollowUp: true,
+          },
+          providerUsed: "gemini",
+          wasFailover: false,
+        };
+      },
+    });
+
+    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "need special pricing", attachmentType: null };
+    await handleInstagramMessage(event, deps, now);
+
+    const notifyCall = deps.calls.find((c) => c.fn === "notifyAdmin");
+    expect(notifyCall?.args[0].type).toBe("needs_followup");
+    expect(deps.calls.filter((c) => c.fn === "sendText" && c.args[0].text === IG_ACK_HUMAN).length).toBe(0);
+  });
+
+  it("handles notifyAdmin throw without affecting reply", async () => {
+    const deps = makeDeps({
+      async runTurn() {
+        deps.calls.push({ fn: "runTurn", args: Array.from(arguments) });
+        return {
+          data: {
+            replyMessage: "Let me connect you",
+            extractedFields: {},
+            wantsToBookSurvey: false,
+            wantsHuman: true,
+            needsTeamFollowUp: false,
+          },
+          providerUsed: "gemini",
+          wasFailover: false,
+        };
+      },
+      async notifyAdmin() {
+        deps.calls.push({ fn: "notifyAdmin", args: Array.from(arguments) });
+        throw new Error("notify failed");
+      },
+    });
+
+    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "talk to human", attachmentType: null };
+    const result = await handleInstagramMessage(event, deps, now);
+
+    expect(result.status).toBe("replied");
   });
 });

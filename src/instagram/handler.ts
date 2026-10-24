@@ -3,12 +3,13 @@
  */
 
 import type { InstagramInbound } from "./parse.js";
-import { IG_ACK_OPT_OUT, IG_ATTACHMENT_REPLY } from "./messages.js";
+import { IG_ACK_OPT_OUT, IG_ATTACHMENT_REPLY, IG_ACK_HUMAN } from "./messages.js";
 import { evaluateSlotReply } from "../flows/slot-reply.js";
 import { buildConfirmationMessage, generateSlotOptions } from "../flows/booking.js";
 import { promisesTeamFollowUp } from "../flows/followup.js";
 import { shouldOfferSurveySlots } from "../flows/slot-offer-policy.js";
 import { classifyInboundIntent } from "../outreach/messages.js";
+import { looksLikeHumanRequest } from "../notify/human-request.js";
 
 export type InstagramStatus =
   | "duplicate"
@@ -90,6 +91,12 @@ export interface InstagramDeps {
     failover: boolean
   ): Promise<void>;
   setEscalated(leadId: string): Promise<void>;
+  notifyAdmin(input: {
+    type: "booking_confirmed" | "human_requested" | "needs_followup";
+    leadId: string;
+    lastMessage: string | null;
+    slotLabel: string | null;
+  }): Promise<void>;
 }
 
 export async function handleInstagramMessage(
@@ -207,6 +214,20 @@ export async function handleInstagramMessage(
           await deps.recordSlotSelection(offer.id, slot.label);
           await deps.setStatus(resolved.leadId, "booked");
 
+          try {
+            await deps.notifyAdmin({
+              type: "booking_confirmed",
+              leadId: resolved.leadId,
+              lastMessage: null,
+              slotLabel: slot.label,
+            });
+          } catch (error) {
+            console.log(
+              "[Instagram] Admin notify failed:",
+              error instanceof Error ? error.message : String(error)
+            );
+          }
+
           return { status: "slot_confirmed" };
         } else if (evaluation.kind === "stale") {
           const freshSlots = generateSlotOptions();
@@ -247,17 +268,13 @@ export async function handleInstagramMessage(
     await deps.mergeFields(resolved.leadId, fieldsToMerge, turn.providerUsed, turn.wasFailover);
   }
 
-  if (turn.data.wantsHuman || turn.data.needsTeamFollowUp) {
+  const humanRequested = turn.data.wantsHuman || looksLikeHumanRequest(event.text);
+
+  if (humanRequested || turn.data.needsTeamFollowUp) {
     await deps.setEscalated(resolved.leadId);
   }
 
-  const followUpNeeded =
-    !turn.data.wantsHuman &&
-    (turn.data.needsTeamFollowUp || promisesTeamFollowUp(turn.data.replyMessage));
-
-  if (followUpNeeded) {
-    await deps.setEscalated(resolved.leadId);
-  }
+  const followUpNeeded = !humanRequested && (turn.data.needsTeamFollowUp || promisesTeamFollowUp(turn.data.replyMessage));
 
   await deps.sendText({
     igsid: event.igsid,
@@ -265,6 +282,45 @@ export async function handleInstagramMessage(
     text: turn.data.replyMessage,
     senderType: "ai",
   });
+
+  if (humanRequested) {
+    await deps.sendText({
+      igsid: event.igsid,
+      leadId: resolved.leadId,
+      text: IG_ACK_HUMAN,
+      senderType: "system",
+    });
+
+    try {
+      await deps.notifyAdmin({
+        type: "human_requested",
+        leadId: resolved.leadId,
+        lastMessage: event.text,
+        slotLabel: null,
+      });
+    } catch (error) {
+      console.log(
+        "[Instagram] Admin notify failed:",
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+  }
+
+  if (followUpNeeded) {
+    try {
+      await deps.notifyAdmin({
+        type: "needs_followup",
+        leadId: resolved.leadId,
+        lastMessage: event.text,
+        slotLabel: null,
+      });
+    } catch (error) {
+      console.log(
+        "[Instagram] Admin notify failed:",
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+  }
 
   if (turn.data.wantsToBookSurvey) {
     const openOfferForSlots = await deps.getOpenOffer(resolved.leadId);
