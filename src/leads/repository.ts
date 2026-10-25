@@ -500,3 +500,30 @@ export async function setHumanTakeover(leadId: string, enabled: boolean): Promis
     WHERE id = ${leadId}
   `;
 }
+
+export async function findPreviousConfirmedOffer(
+  leadId: string,
+  excludeOfferId: string
+): Promise<{ id: string; calendar_event_id: string } | undefined> {
+  const result = await sql<Array<{ id: string; calendar_event_id: string }>>`
+    SELECT id, calendar_event_id
+    FROM booking_offers
+    WHERE lead_id = ${leadId}
+      AND id <> ${excludeOfferId}
+      AND selected_slot IS NOT NULL
+      AND superseded_at IS NULL
+      AND calendar_status = 'created'
+      AND calendar_event_id IS NOT NULL
+    ORDER BY responded_at DESC
+    LIMIT 1
+  `;
+  return result[0];
+}
+
+export async function markOfferCalendarCancelled(offerId: string): Promise<void> {
+  await sql`
+    UPDATE booking_offers
+    SET calendar_status = 'cancelled'
+    WHERE id = ${offerId}
+  `;
+}

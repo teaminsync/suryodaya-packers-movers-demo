@@ -127,5 +127,30 @@ export function createCalendarClient(deps: CalendarDeps) {
     };
   }
 
-  return { freeBusy, insertEvent };
+  async function deleteEvent(eventId: string): Promise<void> {
+    const token = await deps.getAccessToken();
+
+    const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(deps.calendarId)}/events/${encodeURIComponent(eventId)}`;
+
+    const response = await deps.fetchFn(url, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (response.ok) {
+      return;
+    }
+
+    if (response.status === 404 || response.status === 410) {
+      return;
+    }
+
+    const text = await response.text();
+    const preview = text.slice(0, 200);
+    throw new Error(`Google Calendar HTTP ${response.status}: ${preview}`);
+  }
+
+  return { freeBusy, insertEvent, deleteEvent };
 }

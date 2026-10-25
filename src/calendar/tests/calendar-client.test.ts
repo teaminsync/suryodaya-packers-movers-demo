@@ -333,4 +333,125 @@ describe("Calendar client", () => {
       expect(msg.length).toBeLessThanOrEqual(250); // "Google Calendar HTTP 400: " + 200 chars
     }
   });
+
+  it("deleteEvent sends DELETE request and resolves on 204", async () => {
+    let capturedUrl = "";
+    let capturedMethod = "";
+    let capturedHeaders: Record<string, string> = {};
+    let capturedBody: string | undefined = undefined;
+
+    const mockFetch: typeof fetch = async (url, options) => {
+      capturedUrl = url as string;
+      capturedMethod = options?.method || "GET";
+      capturedHeaders = options?.headers as Record<string, string>;
+      capturedBody = options?.body as string | undefined;
+
+      return {
+        ok: true,
+        status: 204,
+      } as Response;
+    };
+
+    const client = createCalendarClient({
+      calendarId: "test@calendar.com",
+      getAccessToken: getToken,
+      fetchFn: mockFetch,
+    });
+
+    await client.deleteEvent("event-123");
+
+    expect(capturedUrl).toBe(
+      "https://www.googleapis.com/calendar/v3/calendars/test%40calendar.com/events/event-123"
+    );
+    expect(capturedMethod).toBe("DELETE");
+    expect(capturedHeaders["Authorization"]).toBe("Bearer fake-token");
+    expect(capturedBody).toBeUndefined();
+  });
+
+  it("deleteEvent resolves on 404", async () => {
+    const mockFetch: typeof fetch = async () => {
+      return {
+        ok: false,
+        status: 404,
+        text: async () => "Not found",
+      } as Response;
+    };
+
+    const client = createCalendarClient({
+      calendarId: "test@calendar.com",
+      getAccessToken: getToken,
+      fetchFn: mockFetch,
+    });
+
+    await client.deleteEvent("event-123");
+    // Should not throw
+  });
+
+  it("deleteEvent resolves on 410", async () => {
+    const mockFetch: typeof fetch = async () => {
+      return {
+        ok: false,
+        status: 410,
+        text: async () => "Gone",
+      } as Response;
+    };
+
+    const client = createCalendarClient({
+      calendarId: "test@calendar.com",
+      getAccessToken: getToken,
+      fetchFn: mockFetch,
+    });
+
+    await client.deleteEvent("event-123");
+    // Should not throw
+  });
+
+  it("deleteEvent rejects on 500 with message starting Google Calendar HTTP 500", async () => {
+    const mockFetch: typeof fetch = async () => {
+      return {
+        ok: false,
+        status: 500,
+        text: async () => "Internal server error",
+      } as Response;
+    };
+
+    const client = createCalendarClient({
+      calendarId: "test@calendar.com",
+      getAccessToken: getToken,
+      fetchFn: mockFetch,
+    });
+
+    try {
+      await client.deleteEvent("event-123");
+      expect(true).toBe(false); // should have thrown
+    } catch (error) {
+      const msg = (error as Error).message;
+      expect(msg).toContain("Google Calendar HTTP 500");
+      expect(msg).not.toContain("fake-token");
+    }
+  });
+
+  it("deleteEvent URL-encodes event id with special characters", async () => {
+    let capturedUrl = "";
+
+    const mockFetch: typeof fetch = async (url) => {
+      capturedUrl = url as string;
+      return {
+        ok: true,
+        status: 204,
+      } as Response;
+    };
+
+    const client = createCalendarClient({
+      calendarId: "test@calendar.com",
+      getAccessToken: getToken,
+      fetchFn: mockFetch,
+    });
+
+    await client.deleteEvent("event/with spaces");
+
+    expect(capturedUrl).toBe(
+      "https://www.googleapis.com/calendar/v3/calendars/test%40calendar.com/events/event%2Fwith%20spaces"
+    );
+  });
 });

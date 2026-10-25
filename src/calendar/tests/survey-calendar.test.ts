@@ -421,4 +421,123 @@ describe("Survey calendar", () => {
       expect(result.reason).toBe("conflict");
     }
   });
+
+  it("cancelEvent with no calendar returns not_configured", async () => {
+    const calendar = createSurveyCalendar({
+      config,
+      calendar: null,
+      staticSlots: () => [],
+      buildEventContent: async () => ({
+        summary: "Test",
+        description: "Test",
+        location: null,
+      }),
+    });
+
+    const result = await calendar.cancelEvent("event-123");
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.status).toBe("not_configured");
+    }
+  });
+
+  it("cancelEvent with calendar without deleteEvent returns not_configured", async () => {
+    const mockCalendar = {
+      async freeBusy(): Promise<BusyInterval[]> {
+        return [];
+      },
+      async insertEvent() {
+        return { id: "event-1", htmlLink: null };
+      },
+    };
+
+    const calendar = createSurveyCalendar({
+      config,
+      calendar: mockCalendar,
+      staticSlots: () => [],
+      buildEventContent: async () => ({
+        summary: "Test",
+        description: "Test",
+        location: null,
+      }),
+    });
+
+    const result = await calendar.cancelEvent("event-123");
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.status).toBe("not_configured");
+    }
+  });
+
+  it("cancelEvent with deleteEvent calls it and returns cancelled", async () => {
+    let deleteCalled = false;
+    let deletedEventId = "";
+
+    const mockCalendar = {
+      async freeBusy(): Promise<BusyInterval[]> {
+        return [];
+      },
+      async insertEvent() {
+        return { id: "event-1", htmlLink: null };
+      },
+      async deleteEvent(eventId: string) {
+        deleteCalled = true;
+        deletedEventId = eventId;
+      },
+    };
+
+    const calendar = createSurveyCalendar({
+      config,
+      calendar: mockCalendar,
+      staticSlots: () => [],
+      buildEventContent: async () => ({
+        summary: "Test",
+        description: "Test",
+        location: null,
+      }),
+    });
+
+    const result = await calendar.cancelEvent("event-123");
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.status).toBe("cancelled");
+    }
+    expect(deleteCalled).toBe(true);
+    expect(deletedEventId).toBe("event-123");
+  });
+
+  it("cancelEvent with deleteEvent throwing returns error", async () => {
+    const mockCalendar = {
+      async freeBusy(): Promise<BusyInterval[]> {
+        return [];
+      },
+      async insertEvent() {
+        return { id: "event-1", htmlLink: null };
+      },
+      async deleteEvent() {
+        throw new Error("Delete failed");
+      },
+    };
+
+    const calendar = createSurveyCalendar({
+      config,
+      calendar: mockCalendar,
+      staticSlots: () => [],
+      buildEventContent: async () => ({
+        summary: "Test",
+        description: "Test",
+        location: null,
+      }),
+    });
+
+    const result = await calendar.cancelEvent("event-123");
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe("Delete failed");
+    }
+  });
 });

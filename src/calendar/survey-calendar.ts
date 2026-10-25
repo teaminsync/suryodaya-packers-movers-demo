@@ -34,6 +34,7 @@ export interface SurveyCalendarDeps {
       end: Date;
       leadId: string;
     }): Promise<{ id: string; htmlLink: string | null }>;
+    deleteEvent?(eventId: string): Promise<void>;
   } | null;
   staticSlots(now: Date): Array<{ label: string; datetime: string }>;
   buildEventContent(leadId: string): Promise<{
@@ -177,5 +178,24 @@ export function createSurveyCalendar(deps: SurveyCalendarDeps) {
     }
   }
 
-  return { getSlotOptions, claimSlot };
+  async function cancelEvent(
+    eventId: string
+  ): Promise<
+    { ok: true; status: "cancelled" | "not_configured" } | { ok: false; error: string }
+  > {
+    if (deps.calendar === null || deps.calendar.deleteEvent === undefined) {
+      return { ok: true, status: "not_configured" };
+    }
+
+    try {
+      await deps.calendar.deleteEvent(eventId);
+      return { ok: true, status: "cancelled" };
+    } catch (error) {
+      const message = (error as Error).message;
+      console.log("[Calendar] Could not cancel event:", message);
+      return { ok: false, error: message };
+    }
+  }
+
+  return { getSlotOptions, claimSlot, cancelEvent };
 }

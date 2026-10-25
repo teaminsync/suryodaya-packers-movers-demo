@@ -9,3 +9,7 @@ export const surveyBookingDeps: SurveyBookingDeps = {
   getSlotOptions: (now) => surveyCalendar.getSlotOptions(now),
   claimSlot: (input) => surveyCalendar.claimSlot(input),
 };
+
+export const surveyCancelDeps = {
+  cancelEvent: (eventId: string) => surveyCalendar.cancelEvent(eventId),
+};

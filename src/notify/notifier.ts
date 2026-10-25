@@ -4,7 +4,7 @@
 
 import type { AdminEvent, AdminEventType } from "./types.js";
 import { buildEmail, buildTemplateParams } from "./format.js";
-import { NOTIFY_DEDUPE_MINUTES } from "./dedupe.js";
+import { NOTIFY_DEDUPE_MINUTES, dedupeKeyFor } from "./dedupe.js";
 
 export interface NotifierDeps {
   emailConfig: { apiKey: string; to: string; from: string } | null;
@@ -28,7 +28,8 @@ export interface NotifierDeps {
   recentlySent(
     leadId: string,
     type: AdminEventType,
-    since: Date
+    since: Date,
+    dedupeKey: string | null
   ): Promise<boolean>;
   record(row: {
     leadId: string;
@@ -36,6 +37,7 @@ export interface NotifierDeps {
     channel: "email" | "whatsapp";
     status: "sent" | "failed" | "dry_run";
     detail: string | null;
+    dedupeKey: string | null;
   }): Promise<void>;
 }
 
@@ -50,10 +52,12 @@ export function createNotifier(deps: NotifierDeps) {
         return;
       }
 
+      const dedupeKey = dedupeKeyFor(event);
+
       let shouldSkip = false;
       try {
         const since = new Date(deps.now().getTime() - NOTIFY_DEDUPE_MINUTES * 60 * 1000);
-        shouldSkip = await deps.recentlySent(event.leadId, event.type, since);
+        shouldSkip = await deps.recentlySent(event.leadId, event.type, since, dedupeKey);
       } catch (error) {
         console.log(
           "[Notify] Dedupe check failed, sending anyway:",
@@ -80,6 +84,7 @@ export function createNotifier(deps: NotifierDeps) {
               channel: "email",
               status: "dry_run",
               detail: null,
+              dedupeKey,
             });
           } catch {}
         }
@@ -92,6 +97,7 @@ export function createNotifier(deps: NotifierDeps) {
               channel: "whatsapp",
               status: "dry_run",
               detail: null,
+              dedupeKey,
             });
           } catch {}
         }
@@ -121,6 +127,7 @@ export function createNotifier(deps: NotifierDeps) {
                   channel: "email",
                   status: "sent",
                   detail: null,
+                  dedupeKey,
                 });
               } catch {}
             } catch (error) {
@@ -133,6 +140,7 @@ export function createNotifier(deps: NotifierDeps) {
                   channel: "email",
                   status: "failed",
                   detail: message.substring(0, 200),
+                  dedupeKey,
                 });
               } catch {}
             }
@@ -159,6 +167,7 @@ export function createNotifier(deps: NotifierDeps) {
                   channel: "whatsapp",
                   status: "sent",
                   detail: null,
+                  dedupeKey,
                 });
               } catch {}
             } catch (error) {
@@ -171,6 +180,7 @@ export function createNotifier(deps: NotifierDeps) {
                   channel: "whatsapp",
                   status: "failed",
                   detail: message.substring(0, 200),
+                  dedupeKey,
                 });
               } catch {}
             }

@@ -80,14 +80,15 @@ export function handleWebhook(req: Request, res: Response): void {
  */
 async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
   // Lazy imports to avoid circular dependency issues
-  const { isMessageProcessed, markMessageProcessed, unmarkMessageProcessed, mergeLeadFields, setLeadStatus, setLeadEscalated, findOpenBookingOffer, createBookingOffer, recordSlotSelection, createMessage, recordSurveyCalendar } = await import("../leads/repository.js");
+  const { isMessageProcessed, markMessageProcessed, unmarkMessageProcessed, mergeLeadFields, setLeadStatus, setLeadEscalated, findOpenBookingOffer, createBookingOffer, recordSlotSelection, createMessage, recordSurveyCalendar, findPreviousConfirmedOffer, markOfferCalendarCancelled } = await import("../leads/repository.js");
   const { processConversationTurn } = await import("../flows/qualification.js");
   const { promisesTeamFollowUp } = await import("../flows/followup.js");
   const { looksLikeHumanRequest } = await import("../notify/human-request.js");
   const { adminNotifier } = await import("../notify/notify-db.js");
   const { offerSurveySlots, resolveSlotChoice } = await import("../flows/survey-booking.js");
-  const { surveyBookingDeps } = await import("../flows/survey-booking-db.js");
+  const { surveyBookingDeps, surveyCancelDeps } = await import("../flows/survey-booking-db.js");
   const { evaluateSlotReply } = await import("../flows/slot-reply.js");
+  const { planCancelPrevious, shouldHandleSlotReply, statusWhenOfferingSlots } = await import("../flows/rebooking.js");
   const { shouldOfferSurveySlots } = await import("../flows/slot-offer-policy.js");
   const { getBallparkRange } = await import("../company/profile.js");
   const { whatsappClient } = await import("./client.js");
@@ -106,7 +107,7 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
     void adminNotifier.notifyLead({ type: "needs_followup", leadId, lastMessage: "No survey times were available to offer", slotLabel: null }).catch(() => {});
   };
 
-  const offerSlotsTo = async (leadId: string, to: string): Promise<boolean> => {
+  const offerSlotsTo = async (leadId: string, to: string, currentStatus: string): Promise<boolean> => {
     const offer = await offerSurveySlots(surveyBookingDeps, new Date());
     await sendSystemText(leadId, to, offer.message);
     if (offer.kind === "none") {
@@ -114,7 +115,7 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
       return false;
     }
     await createBookingOffer(leadId, offer.slots);
-    await setLeadStatus(leadId, "booking_offered");
+    await setLeadStatus(leadId, statusWhenOfferingSlots(currentStatus));
     return true;
   };
 
@@ -272,7 +273,7 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
             }
 
             if (interactionId === "book_survey") {
-              await offerSlotsTo(lead.id, whatsappNumber);
+              await offerSlotsTo(lead.id, whatsappNumber, lead.status);
               console.log("[Webhook] Survey slot offer handled (button tap)");
               continue;
             }
@@ -370,9 +371,9 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
           }
 
           // Step 4: Check if they're responding to a booking offer with a slot selection
-          if (lead.status === "booking_offered" && !lead.human_takeover && message.type === "text" && message.text?.body) {
+          if ((lead.status === "booking_offered" || lead.status === "booked") && !lead.human_takeover && message.type === "text" && message.text?.body) {
             const openOffer = await findOpenBookingOffer(lead.id);
-            if (openOffer) {
+            if (openOffer && shouldHandleSlotReply({ status: lead.status, openOffer, now: new Date() })) {
               let slots;
               try {
                 slots = JSON.parse(openOffer.slot_options);
@@ -387,6 +388,14 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
                 if (resolution.kind === "confirmed") {
                   const claim = resolution.claim;
                   console.log("[Webhook] Slot selected:", resolution.slot.label, { calendarStatus: claim.status });
+                  let cancelPlan = planCancelPrevious(undefined);
+                  if (claim.status === "created") {
+                    try {
+                      cancelPlan = planCancelPrevious(await findPreviousConfirmedOffer(lead.id, openOffer.id));
+                    } catch (error) {
+                      console.error("[Webhook] Could not look up the previous survey booking:", error instanceof Error ? error.message : String(error));
+                    }
+                  }
                   await recordSlotSelection(openOffer.id, resolution.slot.label);
                   try {
                     await recordSurveyCalendar(openOffer.id, { startsAt: claim.startsAt, endsAt: claim.endsAt, status: claim.status, eventId: claim.eventId, eventLink: claim.eventLink });
@@ -396,6 +405,17 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
                   await setLeadStatus(lead.id, "booked");
                   await sendSystemText(lead.id, whatsappNumber, resolution.message);
                   void adminNotifier.notifyLead({ type: "booking_confirmed", leadId: lead.id, lastMessage: null, slotLabel: resolution.slot.label }).catch(() => {});
+                  if (cancelPlan.kind === "cancel") {
+                    try {
+                      const cancelled = await surveyCancelDeps.cancelEvent(cancelPlan.eventId);
+                      if (cancelled.ok && cancelled.status === "cancelled") {
+                        await markOfferCalendarCancelled(cancelPlan.offerId);
+                      }
+                      console.log("[Webhook] Previous survey event cancel:", { leadId: lead.id, offerId: cancelPlan.offerId, result: cancelled.ok ? cancelled.status : "failed" });
+                    } catch (error) {
+                      console.error("[Webhook] Could not cancel the previous survey event:", error instanceof Error ? error.message : String(error), { eventId: cancelPlan.eventId });
+                    }
+                  }
                   console.log("[Webhook] Booking confirmed for lead:", lead.id);
                   continue;
                 }
@@ -708,7 +728,7 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
               console.log("[Webhook] Survey slots not re-sent: a fresh offer is already open", { leadId: lead.id });
             }
             if (offerSlotsNow) {
-              await offerSlotsTo(lead.id, whatsappNumber);
+              await offerSlotsTo(lead.id, whatsappNumber, lead.status);
               console.log("[Webhook] Survey slot offer handled (AI detected intent)");
             }
 

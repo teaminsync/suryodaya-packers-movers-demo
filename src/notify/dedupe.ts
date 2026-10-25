@@ -4,6 +4,14 @@
 
 export const NOTIFY_DEDUPE_MINUTES = 10;
 
+export function dedupeKeyFor(event: { type: string; slotLabel: string | null }): string | null {
+  if (event.type === "booking_confirmed") {
+    const trimmed = event.slotLabel?.trim();
+    return trimmed || null;
+  }
+  return null;
+}
+
 export function isRecentlySent(
   rows: Array<{ status: string; created_at: string | Date }>,
   now: Date,

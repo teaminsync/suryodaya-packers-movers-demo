@@ -285,6 +285,8 @@ async function initSchema(): Promise<void> {
     )
   `;
 
+  await sql`ALTER TABLE admin_notifications ADD COLUMN IF NOT EXISTS dedupe_key TEXT`;
+
   await sql`
     CREATE INDEX IF NOT EXISTS idx_admin_notifications_lead_event ON admin_notifications(lead_id, event_type, created_at)
   `;

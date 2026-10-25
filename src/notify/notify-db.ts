@@ -77,13 +77,14 @@ const notifier = createNotifier({
     });
   },
 
-  async recentlySent(leadId, type, since) {
+  async recentlySent(leadId, type, since, dedupeKey) {
     const rows = await sql<Array<{ status: string; created_at: string }>>`
       SELECT status, created_at
       FROM admin_notifications
       WHERE lead_id = ${leadId}
         AND event_type = ${type}
         AND created_at >= ${since.toISOString()}
+        AND dedupe_key IS NOT DISTINCT FROM ${dedupeKey}::text
     `;
 
     return isRecentlySent(rows, new Date());
@@ -94,8 +95,8 @@ const notifier = createNotifier({
     const now = new Date().toISOString();
 
     await sql`
-      INSERT INTO admin_notifications (id, lead_id, event_type, channel, status, detail, created_at)
-      VALUES (${id}, ${row.leadId}, ${row.eventType}, ${row.channel}, ${row.status}, ${row.detail}, ${now})
+      INSERT INTO admin_notifications (id, lead_id, event_type, channel, status, detail, created_at, dedupe_key)
+      VALUES (${id}, ${row.leadId}, ${row.eventType}, ${row.channel}, ${row.status}, ${row.detail}, ${now}, ${row.dedupeKey})
     `;
   },
 });
