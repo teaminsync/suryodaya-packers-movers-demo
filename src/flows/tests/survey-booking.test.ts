@@ -386,4 +386,58 @@ describe("resolveSlotChoice", () => {
 
     expect(result.kind).toBe("not_a_choice");
   });
+
+  it("stale + fresh available passes same Date object to getSlotOptions", async () => {
+    const capturedDates: Date[] = [];
+    const fresh = [
+      { label: "Thu, 22 Oct at 10:00 AM", datetime: "2026-10-22T10:00:00.000Z" },
+    ];
+
+    const deps: SurveyBookingDeps = {
+      getSlotOptions: async (now: Date) => {
+        capturedDates.push(now);
+        return fresh;
+      },
+      claimSlot: async () => {
+        throw new Error("claimSlot should not be called");
+      },
+    };
+
+    const evaluation: SlotReplyResult = { kind: "stale" };
+    const now = new Date("2026-10-19T10:00:00.000Z");
+    await resolveSlotChoice(deps, {
+      leadId: "lead-123",
+      slots,
+      evaluation,
+      now,
+    });
+
+    expect(capturedDates[0]).toBe(now);
+  });
+
+  it("select + conflict + fresh available passes same Date object to getSlotOptions", async () => {
+    const capturedDates: Date[] = [];
+    const fresh = [
+      { label: "Thu, 22 Oct at 10:00 AM", datetime: "2026-10-22T10:00:00.000Z" },
+    ];
+
+    const deps: SurveyBookingDeps = {
+      getSlotOptions: async (now: Date) => {
+        capturedDates.push(now);
+        return fresh;
+      },
+      claimSlot: async () => ({ ok: false, reason: "conflict" }),
+    };
+
+    const evaluation: SlotReplyResult = { kind: "select", index: 0 };
+    const now = new Date("2026-10-19T10:00:00.000Z");
+    await resolveSlotChoice(deps, {
+      leadId: "lead-123",
+      slots,
+      evaluation,
+      now,
+    });
+
+    expect(capturedDates[0]).toBe(now);
+  });
 });

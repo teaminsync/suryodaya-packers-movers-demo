@@ -80,12 +80,13 @@ export function handleWebhook(req: Request, res: Response): void {
  */
 async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
   // Lazy imports to avoid circular dependency issues
-  const { isMessageProcessed, markMessageProcessed, unmarkMessageProcessed, mergeLeadFields, setLeadStatus, setLeadEscalated, findOpenBookingOffer, createBookingOffer, recordSlotSelection, createMessage } = await import("../leads/repository.js");
+  const { isMessageProcessed, markMessageProcessed, unmarkMessageProcessed, mergeLeadFields, setLeadStatus, setLeadEscalated, findOpenBookingOffer, createBookingOffer, recordSlotSelection, createMessage, recordSurveyCalendar } = await import("../leads/repository.js");
   const { processConversationTurn } = await import("../flows/qualification.js");
   const { promisesTeamFollowUp } = await import("../flows/followup.js");
   const { looksLikeHumanRequest } = await import("../notify/human-request.js");
   const { adminNotifier } = await import("../notify/notify-db.js");
-  const { generateSlotOptions, buildConfirmationMessage } = await import("../flows/booking.js");
+  const { offerSurveySlots, resolveSlotChoice } = await import("../flows/survey-booking.js");
+  const { surveyBookingDeps } = await import("../flows/survey-booking-db.js");
   const { evaluateSlotReply } = await import("../flows/slot-reply.js");
   const { shouldOfferSurveySlots } = await import("../flows/slot-offer-policy.js");
   const { getBallparkRange } = await import("../company/profile.js");
@@ -94,6 +95,28 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
   const { classifyInboundIntent } = await import("../outreach/messages.js");
   const { handleInboundOutreach } = await import("../outreach/inbound.js");
   const { inboundDeps } = await import("../outreach/inbound-db.js");
+
+  const sendSystemText = async (leadId: string, to: string, text: string): Promise<void> => {
+    await whatsappClient.sendMessage(to, text);
+    await createMessage({ leadId, wamid: null, direction: "outbound", senderType: "system", messageType: "text", body: text });
+  };
+
+  const escalateNoSlots = async (leadId: string): Promise<void> => {
+    await setLeadEscalated(leadId);
+    void adminNotifier.notifyLead({ type: "needs_followup", leadId, lastMessage: "No survey times were available to offer", slotLabel: null }).catch(() => {});
+  };
+
+  const offerSlotsTo = async (leadId: string, to: string): Promise<boolean> => {
+    const offer = await offerSurveySlots(surveyBookingDeps, new Date());
+    await sendSystemText(leadId, to, offer.message);
+    if (offer.kind === "none") {
+      await escalateNoSlots(leadId);
+      return false;
+    }
+    await createBookingOffer(leadId, offer.slots);
+    await setLeadStatus(leadId, "booking_offered");
+    return true;
+  };
 
   // Validate payload structure
   if (payload.object !== "whatsapp_business_account") {
@@ -249,24 +272,8 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
             }
 
             if (interactionId === "book_survey") {
-              const slots = generateSlotOptions();
-              const slotMessage = `Great! Here are available survey times:\n\n${slots.map((s, i) => `${i + 1}. ${s.label}`).join("\n")}\n\nReply with the number of your preferred time.`;
-              
-              await whatsappClient.sendMessage(whatsappNumber, slotMessage);
-              
-              // Log outbound booking slots message
-              await createMessage({
-                leadId: lead.id,
-                wamid: null,
-                direction: "outbound",
-                senderType: "system",
-                messageType: "text",
-                body: slotMessage,
-              });
-              
-              await createBookingOffer(lead.id, slots);
-              await setLeadStatus(lead.id, "booking_offered");
-              console.log("[Webhook] Booking slots offered");
+              await offerSlotsTo(lead.id, whatsappNumber);
+              console.log("[Webhook] Survey slot offer handled (button tap)");
               continue;
             }
 
@@ -374,60 +381,39 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
               }
 
               if (slots) {
-                const evaluation = evaluateSlotReply({
-                  text: message.text.body,
-                  slots,
-                  now: new Date(),
-                });
+                const evaluation = evaluateSlotReply({ text: message.text.body, slots, now: new Date() });
+                const resolution = await resolveSlotChoice(surveyBookingDeps, { leadId: lead.id, slots, evaluation, now: new Date() });
 
-                if (evaluation.kind === "select") {
-                  const selectedSlot = slots[evaluation.index];
-                  console.log("[Webhook] Slot selected:", selectedSlot.label);
-                  
-                  const confirmMessage = buildConfirmationMessage(selectedSlot);
-                  await whatsappClient.sendMessage(whatsappNumber, confirmMessage);
-                  await recordSlotSelection(openOffer.id, selectedSlot.label);
+                if (resolution.kind === "confirmed") {
+                  const claim = resolution.claim;
+                  console.log("[Webhook] Slot selected:", resolution.slot.label, { calendarStatus: claim.status });
+                  await recordSlotSelection(openOffer.id, resolution.slot.label);
+                  try {
+                    await recordSurveyCalendar(openOffer.id, { startsAt: claim.startsAt, endsAt: claim.endsAt, status: claim.status, eventId: claim.eventId, eventLink: claim.eventLink });
+                  } catch (error) {
+                    console.error("[Webhook] Could not record survey calendar details:", error instanceof Error ? error.message : String(error));
+                  }
                   await setLeadStatus(lead.id, "booked");
-
-                  void adminNotifier.notifyLead({
-                    type: "booking_confirmed",
-                    leadId: lead.id,
-                    lastMessage: null,
-                    slotLabel: selectedSlot.label,
-                  }).catch(() => {});
-
-                  // Log outbound booking confirmation
-                  await createMessage({
-                    leadId: lead.id,
-                    wamid: null,
-                    direction: "outbound",
-                    senderType: "system",
-                    messageType: "text",
-                    body: confirmMessage,
-                  });
-
+                  await sendSystemText(lead.id, whatsappNumber, resolution.message);
+                  void adminNotifier.notifyLead({ type: "booking_confirmed", leadId: lead.id, lastMessage: null, slotLabel: resolution.slot.label }).catch(() => {});
                   console.log("[Webhook] Booking confirmed for lead:", lead.id);
                   continue;
-                } else if (evaluation.kind === "stale") {
-                  const freshSlots = generateSlotOptions();
-                  const slotMessage = `Those times have already passed. Here are fresh survey times:\n\n${freshSlots.map((s, i) => `${i + 1}. ${s.label}`).join("\n")}\n\nReply with the number of your preferred time.`;
-                  
-                  await whatsappClient.sendMessage(whatsappNumber, slotMessage);
-                  
-                  // Log outbound fresh slots message
-                  await createMessage({
-                    leadId: lead.id,
-                    wamid: null,
-                    direction: "outbound",
-                    senderType: "system",
-                    messageType: "text",
-                    body: slotMessage,
-                  });
-                  
-                  await createBookingOffer(lead.id, freshSlots);
-                  console.log("[Webhook] Stale slot detected, fresh slots offered");
+                }
+
+                if (resolution.kind === "refreshed") {
+                  await sendSystemText(lead.id, whatsappNumber, resolution.message);
+                  await createBookingOffer(lead.id, resolution.slots);
+                  console.log("[Webhook] Slot choice refreshed:", { leadId: lead.id, reason: resolution.reason });
                   continue;
                 }
+
+                if (resolution.kind === "none_left") {
+                  await sendSystemText(lead.id, whatsappNumber, resolution.message);
+                  await escalateNoSlots(lead.id);
+                  console.log("[Webhook] No survey times left to offer:", lead.id);
+                  continue;
+                }
+                // resolution.kind === "not_a_choice": fall through to the normal handling below
               }
             }
           }
@@ -722,24 +708,8 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
               console.log("[Webhook] Survey slots not re-sent: a fresh offer is already open", { leadId: lead.id });
             }
             if (offerSlotsNow) {
-              const slots = generateSlotOptions();
-              const slotMessage = `Great! Here are available survey times:\n\n${slots.map((s, i) => `${i + 1}. ${s.label}`).join("\n")}\n\nReply with the number of your preferred time.`;
-              
-              await whatsappClient.sendMessage(whatsappNumber, slotMessage);
-              
-              // Log outbound booking slots (AI-triggered)
-              await createMessage({
-                leadId: lead.id,
-                wamid: null,
-                direction: "outbound",
-                senderType: "system",
-                messageType: "text",
-                body: slotMessage,
-              });
-              
-              await createBookingOffer(lead.id, slots);
-              await setLeadStatus(lead.id, "booking_offered");
-              console.log("[Webhook] Booking slots offered (AI detected intent)");
+              await offerSlotsTo(lead.id, whatsappNumber);
+              console.log("[Webhook] Survey slot offer handled (AI detected intent)");
             }
 
             // Handle escalation request
