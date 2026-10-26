@@ -5,11 +5,13 @@
 import type { InstagramInbound } from "./parse.js";
 import { IG_ACK_OPT_OUT, IG_ATTACHMENT_REPLY, IG_ACK_HUMAN } from "./messages.js";
 import { evaluateSlotReply } from "../flows/slot-reply.js";
-import { buildConfirmationMessage, generateSlotOptions } from "../flows/booking.js";
 import { promisesTeamFollowUp } from "../flows/followup.js";
 import { shouldOfferSurveySlots } from "../flows/slot-offer-policy.js";
 import { classifyInboundIntent } from "../outreach/messages.js";
 import { looksLikeHumanRequest } from "../notify/human-request.js";
+import { offerSurveySlots, resolveSlotChoice, type SurveyBookingDeps } from "../flows/survey-booking.js";
+import { shouldHandleSlotReply, statusWhenOfferingSlots } from "../flows/rebooking.js";
+import { finalizeConfirmedBooking, type FinalizeDeps } from "../flows/booking-finalize.js";
 
 export type InstagramStatus =
   | "duplicate"
@@ -18,6 +20,8 @@ export type InstagramStatus =
   | "attachment_reply"
   | "slot_confirmed"
   | "slot_stale"
+  | "slot_taken"
+  | "no_slots"
   | "replied";
 
 export interface InstagramResult {
@@ -65,9 +69,8 @@ export interface InstagramDeps {
     text: string;
     senderType: "ai" | "system";
   }): Promise<void>;
-  getOpenOffer(leadId: string): Promise<{ id: string; slotOptions: string } | undefined>;
+  getOpenOffer(leadId: string): Promise<{ id: string; slotOptions: string; offeredAt: string | Date } | undefined>;
   createOffer(leadId: string, slots: { label: string; datetime: string }[]): Promise<void>;
-  recordSlotSelection(offerId: string, label: string): Promise<void>;
   setStatus(leadId: string, status: string): Promise<void>;
   getKnownInfo(leadId: string): Promise<Record<string, unknown>>;
   runTurn(
@@ -97,6 +100,8 @@ export interface InstagramDeps {
     lastMessage: string | null;
     slotLabel: string | null;
   }): Promise<void>;
+  surveyBooking: SurveyBookingDeps;
+  finalizeDeps(ctx: { leadId: string; igsid: string }): FinalizeDeps;
 }
 
 export async function handleInstagramMessage(
@@ -186,11 +191,11 @@ export async function handleInstagramMessage(
     return { status: "attachment_reply" };
   }
 
-  if (resolved.status === "booking_offered") {
+  if (resolved.status === "booking_offered" || resolved.status === "booked") {
     const offer = await deps.getOpenOffer(resolved.leadId);
 
-    if (offer) {
-      let slots: unknown;
+    if (offer && shouldHandleSlotReply({ status: resolved.status, openOffer: { offered_at: offer.offeredAt }, now })) {
+      let slots;
       try {
         slots = JSON.parse(offer.slotOptions);
       } catch {
@@ -199,27 +204,44 @@ export async function handleInstagramMessage(
 
       if (Array.isArray(slots)) {
         const evaluation = evaluateSlotReply({ text: event.text, slots, now });
+        const resolution = await resolveSlotChoice(deps.surveyBooking, { leadId: resolved.leadId, slots, evaluation, now });
 
-        if (evaluation.kind === "select") {
-          const slot = slots[evaluation.index];
-          const confirmMessage = buildConfirmationMessage(slot);
+        if (resolution.kind === "confirmed") {
+          await finalizeConfirmedBooking(deps.finalizeDeps({ leadId: resolved.leadId, igsid: event.igsid }), {
+            leadId: resolved.leadId,
+            offerId: offer.id,
+            slot: resolution.slot,
+            message: resolution.message,
+            claim: resolution.claim,
+          });
+          return { status: "slot_confirmed" };
+        }
 
+        if (resolution.kind === "refreshed") {
           await deps.sendText({
             igsid: event.igsid,
             leadId: resolved.leadId,
-            text: confirmMessage,
+            text: resolution.message,
             senderType: "system",
           });
+          await deps.createOffer(resolved.leadId, resolution.slots);
+          return { status: resolution.reason === "stale" ? "slot_stale" : "slot_taken" };
+        }
 
-          await deps.recordSlotSelection(offer.id, slot.label);
-          await deps.setStatus(resolved.leadId, "booked");
-
+        if (resolution.kind === "none_left") {
+          await deps.sendText({
+            igsid: event.igsid,
+            leadId: resolved.leadId,
+            text: resolution.message,
+            senderType: "system",
+          });
+          await deps.setEscalated(resolved.leadId);
           try {
             await deps.notifyAdmin({
-              type: "booking_confirmed",
+              type: "needs_followup",
               leadId: resolved.leadId,
-              lastMessage: null,
-              slotLabel: slot.label,
+              lastMessage: "No survey times were available to offer",
+              slotLabel: null,
             });
           } catch (error) {
             console.log(
@@ -227,25 +249,10 @@ export async function handleInstagramMessage(
               error instanceof Error ? error.message : String(error)
             );
           }
-
-          return { status: "slot_confirmed" };
-        } else if (evaluation.kind === "stale") {
-          const freshSlots = generateSlotOptions();
-          const slotMessage = `Those times have already passed. Here are fresh survey times:\n\n${freshSlots
-            .map((s, i) => `${i + 1}. ${s.label}`)
-            .join("\n")}\n\nReply with the number of your preferred time.`;
-
-          await deps.sendText({
-            igsid: event.igsid,
-            leadId: resolved.leadId,
-            text: slotMessage,
-            senderType: "system",
-          });
-
-          await deps.createOffer(resolved.leadId, freshSlots);
-
-          return { status: "slot_stale" };
+          return { status: "no_slots" };
         }
+
+        // resolution.kind === "not_a_choice": fall through to AI turn
       }
     }
   }
@@ -327,27 +334,41 @@ export async function handleInstagramMessage(
     const offerSlotsNow = shouldOfferSurveySlots({
       status: resolved.status,
       openOffer: openOfferForSlots ? {
-        offered_at: new Date(),
+        offered_at: openOfferForSlots.offeredAt,
         slot_options: openOfferForSlots.slotOptions
       } : undefined,
       now,
     });
 
     if (offerSlotsNow) {
-      const slots = generateSlotOptions();
-      const slotMessage = `Great! Here are available survey times:\n\n${slots
-        .map((s, i) => `${i + 1}. ${s.label}`)
-        .join("\n")}\n\nReply with the number of your preferred time.`;
+      const offered = await offerSurveySlots(deps.surveyBooking, now);
 
       await deps.sendText({
         igsid: event.igsid,
         leadId: resolved.leadId,
-        text: slotMessage,
+        text: offered.message,
         senderType: "system",
       });
 
-      await deps.createOffer(resolved.leadId, slots);
-      await deps.setStatus(resolved.leadId, "booking_offered");
+      if (offered.kind === "none") {
+        await deps.setEscalated(resolved.leadId);
+        try {
+          await deps.notifyAdmin({
+            type: "needs_followup",
+            leadId: resolved.leadId,
+            lastMessage: "No survey times were available to offer",
+            slotLabel: null,
+          });
+        } catch (error) {
+          console.log(
+            "[Instagram] Admin notify failed:",
+            error instanceof Error ? error.message : String(error)
+          );
+        }
+      } else {
+        await deps.createOffer(resolved.leadId, offered.slots);
+        await deps.setStatus(resolved.leadId, statusWhenOfferingSlots(resolved.status));
+      }
     }
   }
 

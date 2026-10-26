@@ -16,6 +16,9 @@ import {
   recordSlotSelection,
   createMessage,
   findLeadById,
+  recordSurveyCalendar,
+  findPreviousConfirmedOffer,
+  markOfferCalendarCancelled,
 } from "../leads/repository.js";
 import { resolveEnquiry } from "../leads/intake.js";
 import { intakeDeps } from "../leads/intake-db.js";
@@ -27,6 +30,7 @@ import { setInstagramProfileIfMissing } from "../leads/contacts.js";
 import { sql } from "../leads/db.js";
 import { outreachDeps } from "../outreach/service-db.js";
 import { withRetry } from "../outreach/retry.js";
+import { surveyBookingDeps, surveyCancelDeps } from "../flows/survey-booking-db.js";
 
 async function getLastInstagramInboundAt(contactId: string): Promise<string | null> {
   const result = await sql<{ max_at: string | null }[]>`
@@ -159,15 +163,12 @@ export const instagramDeps: InstagramDeps = {
     return {
       id: offer.id,
       slotOptions: offer.slot_options,
+      offeredAt: offer.offered_at,
     };
   },
 
   async createOffer(leadId: string, slots) {
     await createBookingOffer(leadId, slots);
-  },
-
-  async recordSlotSelection(offerId: string, label: string) {
-    await recordSlotSelection(offerId, label);
   },
 
   async setStatus(leadId: string, status: string) {
@@ -198,6 +199,31 @@ export const instagramDeps: InstagramDeps = {
   async notifyAdmin(input) {
     const { adminNotifier } = await import("../notify/notify-db.js");
     await adminNotifier.notifyLead(input);
+  },
+
+  surveyBooking: surveyBookingDeps,
+
+  finalizeDeps(ctx) {
+    return {
+      findPreviousConfirmedOffer: (leadId, excludeOfferId) => findPreviousConfirmedOffer(leadId, excludeOfferId),
+      recordSlotSelection: (offerId, label) => recordSlotSelection(offerId, label),
+      recordSurveyCalendar: (offerId, info) => recordSurveyCalendar(offerId, info),
+      setBooked: (leadId) => setLeadStatus(leadId, "booked"),
+      sendConfirmation: (text) => instagramDeps.sendText({ igsid: ctx.igsid, leadId: ctx.leadId, text, senderType: "system" }),
+      notifyBooked: (slotLabel) => {
+        void (async () => {
+          try {
+            const { adminNotifier } = await import("../notify/notify-db.js");
+            await adminNotifier.notifyLead({ type: "booking_confirmed", leadId: ctx.leadId, lastMessage: null, slotLabel });
+          } catch {
+            // Silent failure
+          }
+        })();
+      },
+      cancelEvent: surveyCancelDeps.cancelEvent,
+      markOfferCalendarCancelled,
+      warn: (message, detail) => console.error("[Instagram]", message, detail ?? ""),
+    };
   },
 };
 

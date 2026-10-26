@@ -5,6 +5,8 @@
 import { handleInstagramMessage } from "../handler.js";
 import type { InstagramDeps } from "../handler.js";
 import { IG_ACK_OPT_OUT, IG_ACK_HUMAN } from "../messages.js";
+import { NO_SLOTS_MESSAGE, buildFreshSlotsMessage } from "../../flows/booking.js";
+import { buildSlotOfferMessage } from "../../flows/survey-booking.js";
 
 interface CallRecord {
   fn: string;
@@ -13,6 +15,11 @@ interface CallRecord {
 
 function makeDeps(overrides: Partial<InstagramDeps> = {}): InstagramDeps & { calls: CallRecord[] } {
   const calls: CallRecord[] = [];
+
+  const testSlots = [
+    { label: "Mon at 10:00 AM", datetime: new Date("2026-10-21T10:00:00.000Z").toISOString() },
+    { label: "Tue at 2:00 PM", datetime: new Date("2026-10-22T14:00:00.000Z").toISOString() },
+  ];
 
   const defaults: InstagramDeps = {
     async isProcessed() {
@@ -52,9 +59,6 @@ function makeDeps(overrides: Partial<InstagramDeps> = {}): InstagramDeps & { cal
     async createOffer() {
       calls.push({ fn: "createOffer", args: Array.from(arguments) });
     },
-    async recordSlotSelection() {
-      calls.push({ fn: "recordSlotSelection", args: Array.from(arguments) });
-    },
     async setStatus() {
       calls.push({ fn: "setStatus", args: Array.from(arguments) });
     },
@@ -84,6 +88,56 @@ function makeDeps(overrides: Partial<InstagramDeps> = {}): InstagramDeps & { cal
     },
     async notifyAdmin() {
       calls.push({ fn: "notifyAdmin", args: Array.from(arguments) });
+    },
+    surveyBooking: {
+      async getSlotOptions() {
+        calls.push({ fn: "surveyBooking.getSlotOptions", args: Array.from(arguments) });
+        return testSlots;
+      },
+      async claimSlot() {
+        calls.push({ fn: "surveyBooking.claimSlot", args: Array.from(arguments) });
+        return {
+          ok: true,
+          status: "created",
+          startsAt: new Date("2026-10-21T10:00:00.000Z"),
+          endsAt: new Date("2026-10-21T10:30:00.000Z"),
+          eventId: "evt1",
+          eventLink: "https://example.com/evt1",
+        };
+      },
+    },
+    finalizeDeps() {
+      return {
+        async findPreviousConfirmedOffer() {
+          calls.push({ fn: "finalize.findPreviousConfirmedOffer", args: Array.from(arguments) });
+          return undefined;
+        },
+        async recordSlotSelection() {
+          calls.push({ fn: "finalize.recordSlotSelection", args: Array.from(arguments) });
+        },
+        async recordSurveyCalendar() {
+          calls.push({ fn: "finalize.recordSurveyCalendar", args: Array.from(arguments) });
+        },
+        async setBooked() {
+          calls.push({ fn: "finalize.setBooked", args: Array.from(arguments) });
+        },
+        async sendConfirmation() {
+          calls.push({ fn: "finalize.sendConfirmation", args: Array.from(arguments) });
+        },
+        notifyBooked() {
+          calls.push({ fn: "finalize.notifyBooked", args: Array.from(arguments) });
+        },
+        async cancelEvent() {
+          calls.push({ fn: "finalize.cancelEvent", args: Array.from(arguments) });
+          return { ok: true, status: "cancelled" };
+        },
+        async markOfferCalendarCancelled() {
+          calls.push({ fn: "finalize.markOfferCalendarCancelled", args: Array.from(arguments) });
+        },
+        warn() {
+          calls.push({ fn: "finalize.warn", args: Array.from(arguments) });
+        },
+      };
     },
   };
 
@@ -248,7 +302,7 @@ describe("handleInstagramMessage", () => {
     expect(deps.calls.find((c) => c.fn === "runTurn")).toBeFalsy();
   });
 
-  it("handles slot selection in booking_offered status", async () => {
+  it("slot selection on booking_offered status -> slot_confirmed with finalize called", async () => {
     const slotOptions = [
       { label: "Mon at 10:00 AM", datetime: new Date(now.getTime() + 86400000).toISOString() },
       { label: "Tue at 2:00 PM", datetime: new Date(now.getTime() + 2 * 86400000).toISOString() },
@@ -267,7 +321,7 @@ describe("handleInstagramMessage", () => {
       },
       async getOpenOffer() {
         deps.calls.push({ fn: "getOpenOffer", args: Array.from(arguments) });
-        return { id: "o1", slotOptions: JSON.stringify(slotOptions) };
+        return { id: "o1", slotOptions: JSON.stringify(slotOptions), offeredAt: new Date(now.getTime() - 300000) };
       },
     });
 
@@ -275,14 +329,130 @@ describe("handleInstagramMessage", () => {
     const result = await handleInstagramMessage(event, deps, now);
 
     expect(result.status).toBe("slot_confirmed");
-    const sendCall = deps.calls.find((c) => c.fn === "sendText");
-    expect(sendCall?.args[0].text).toContain("You're booked");
-    expect(deps.calls.find((c) => c.fn === "recordSlotSelection")?.args).toEqual(["o1", "Tue at 2:00 PM"]);
-    expect(deps.calls.find((c) => c.fn === "setStatus")?.args).toEqual(["l1", "booked"]);
+
+    const finalizeCalls = deps.calls.filter((c) => c.fn.startsWith("finalize."));
+    expect(finalizeCalls.map((c) => c.fn)).toEqual([
+      "finalize.findPreviousConfirmedOffer",
+      "finalize.recordSlotSelection",
+      "finalize.recordSurveyCalendar",
+      "finalize.setBooked",
+      "finalize.sendConfirmation",
+      "finalize.notifyBooked",
+    ]);
+
+    const confirmationCalls = deps.calls.filter((c) => c.fn === "finalize.sendConfirmation");
+    expect(confirmationCalls.length).toBe(1);
+    expect(confirmationCalls[0].args[0]).toContain("You're booked");
+
     expect(deps.calls.find((c) => c.fn === "runTurn")).toBeFalsy();
   });
 
-  it("handles stale slots in booking_offered status", async () => {
+  it("booked lead with 5-minute-old offer + slot choice -> handled as rebooking", async () => {
+    const slotOptions = [
+      { label: "Mon at 10:00 AM", datetime: new Date(now.getTime() + 86400000).toISOString() },
+    ];
+
+    const deps = makeDeps({
+      async resolveEnquiry() {
+        deps.calls.push({ fn: "resolveEnquiry", args: Array.from(arguments) });
+        return {
+          leadId: "l1",
+          contactId: "c1",
+          status: "booked",
+          humanTakeover: false,
+          createdEnquiry: false,
+        };
+      },
+      async getOpenOffer() {
+        deps.calls.push({ fn: "getOpenOffer", args: Array.from(arguments) });
+        return { id: "o1", slotOptions: JSON.stringify(slotOptions), offeredAt: new Date(now.getTime() - 300000) };
+      },
+    });
+
+    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "1", attachmentType: null };
+    const result = await handleInstagramMessage(event, deps, now);
+
+    expect(result.status).toBe("slot_confirmed");
+    expect(deps.calls.find((c) => c.fn === "finalize.findPreviousConfirmedOffer")).toBeTruthy();
+  });
+
+  it("booked lead with 2-day-old offer + slot choice -> NOT treated as slot (goes to AI)", async () => {
+    const slotOptions = [
+      { label: "Mon at 10:00 AM", datetime: new Date(now.getTime() + 86400000).toISOString() },
+    ];
+
+    const deps = makeDeps({
+      async resolveEnquiry() {
+        deps.calls.push({ fn: "resolveEnquiry", args: Array.from(arguments) });
+        return {
+          leadId: "l1",
+          contactId: "c1",
+          status: "booked",
+          humanTakeover: false,
+          createdEnquiry: false,
+        };
+      },
+      async getOpenOffer() {
+        deps.calls.push({ fn: "getOpenOffer", args: Array.from(arguments) });
+        return { id: "o1", slotOptions: JSON.stringify(slotOptions), offeredAt: new Date(now.getTime() - 2 * 86400000) };
+      },
+    });
+
+    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "1", attachmentType: null };
+    const result = await handleInstagramMessage(event, deps, now);
+
+    expect(result.status).toBe("replied");
+    expect(deps.calls.find((c) => c.fn === "runTurn")).toBeTruthy();
+    expect(deps.calls.find((c) => c.fn.startsWith("finalize."))).toBeFalsy();
+  });
+
+  it("taken slot -> slot_taken, fresh slots sent, new offer created, no finalize", async () => {
+    const slotOptions = [
+      { label: "Mon at 10:00 AM", datetime: new Date(now.getTime() + 86400000).toISOString() },
+    ];
+
+    const freshSlots = [
+      { label: "Wed at 10:00 AM", datetime: new Date(now.getTime() + 3 * 86400000).toISOString() },
+    ];
+
+    const deps = makeDeps({
+      async resolveEnquiry() {
+        deps.calls.push({ fn: "resolveEnquiry", args: Array.from(arguments) });
+        return {
+          leadId: "l1",
+          contactId: "c1",
+          status: "booking_offered",
+          humanTakeover: false,
+          createdEnquiry: false,
+        };
+      },
+      async getOpenOffer() {
+        deps.calls.push({ fn: "getOpenOffer", args: Array.from(arguments) });
+        return { id: "o1", slotOptions: JSON.stringify(slotOptions), offeredAt: new Date(now.getTime() - 300000) };
+      },
+      surveyBooking: {
+        async getSlotOptions() {
+          deps.calls.push({ fn: "surveyBooking.getSlotOptions", args: Array.from(arguments) });
+          return freshSlots;
+        },
+        async claimSlot() {
+          deps.calls.push({ fn: "surveyBooking.claimSlot", args: Array.from(arguments) });
+          return { ok: false, error: "taken" };
+        },
+      },
+    });
+
+    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "1", attachmentType: null };
+    const result = await handleInstagramMessage(event, deps, now);
+
+    expect(result.status).toBe("slot_taken");
+    const sendCall = deps.calls.find((c) => c.fn === "sendText");
+    expect(sendCall?.args[0].text).toBe(buildFreshSlotsMessage(freshSlots, "taken"));
+    expect(deps.calls.find((c) => c.fn === "createOffer")?.args[1]).toEqual(freshSlots);
+    expect(deps.calls.find((c) => c.fn.startsWith("finalize."))).toBeFalsy();
+  });
+
+  it("stale slot -> slot_stale, claim NOT called", async () => {
     const pastSlots = [
       { label: "Mon at 10:00 AM", datetime: new Date(now.getTime() - 86400000).toISOString() },
     ];
@@ -300,7 +470,7 @@ describe("handleInstagramMessage", () => {
       },
       async getOpenOffer() {
         deps.calls.push({ fn: "getOpenOffer", args: Array.from(arguments) });
-        return { id: "o1", slotOptions: JSON.stringify(pastSlots) };
+        return { id: "o1", slotOptions: JSON.stringify(pastSlots), offeredAt: new Date(now.getTime() - 300000) };
       },
     });
 
@@ -308,13 +478,15 @@ describe("handleInstagramMessage", () => {
     const result = await handleInstagramMessage(event, deps, now);
 
     expect(result.status).toBe("slot_stale");
-    const sendCall = deps.calls.find((c) => c.fn === "sendText");
-    expect(sendCall?.args[0].text).toContain("Those times have already passed");
+    expect(deps.calls.find((c) => c.fn === "surveyBooking.claimSlot")).toBeFalsy();
     expect(deps.calls.find((c) => c.fn === "createOffer")).toBeTruthy();
-    expect(deps.calls.find((c) => c.fn === "runTurn")).toBeFalsy();
   });
 
-  it("falls through to AI when booking_offered but text is not a slot selection", async () => {
+  it("none_left -> no_slots, escalated + needs_followup notify, NO createOffer", async () => {
+    const slotOptions = [
+      { label: "Mon at 10:00 AM", datetime: new Date(now.getTime() + 86400000).toISOString() },
+    ];
+
     const deps = makeDeps({
       async resolveEnquiry() {
         deps.calls.push({ fn: "resolveEnquiry", args: Array.from(arguments) });
@@ -328,15 +500,236 @@ describe("handleInstagramMessage", () => {
       },
       async getOpenOffer() {
         deps.calls.push({ fn: "getOpenOffer", args: Array.from(arguments) });
-        return { id: "o1", slotOptions: JSON.stringify([{ label: "Mon", datetime: new Date(now.getTime() + 86400000).toISOString() }]) };
+        return { id: "o1", slotOptions: JSON.stringify(slotOptions), offeredAt: new Date(now.getTime() - 300000) };
+      },
+      surveyBooking: {
+        async getSlotOptions() {
+          deps.calls.push({ fn: "surveyBooking.getSlotOptions", args: Array.from(arguments) });
+          return [];
+        },
+        async claimSlot() {
+          deps.calls.push({ fn: "surveyBooking.claimSlot", args: Array.from(arguments) });
+          return { ok: false, error: "no slots" };
+        },
       },
     });
 
-    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "3 bhk", attachmentType: null };
+    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "1", attachmentType: null };
+    const result = await handleInstagramMessage(event, deps, now);
+
+    expect(result.status).toBe("no_slots");
+    const sendCall = deps.calls.find((c) => c.fn === "sendText");
+    expect(sendCall?.args[0].text).toBe(NO_SLOTS_MESSAGE);
+    expect(deps.calls.find((c) => c.fn === "setEscalated")).toBeTruthy();
+    expect(deps.calls.find((c) => c.fn === "notifyAdmin")?.args[0].type).toBe("needs_followup");
+    expect(deps.calls.find((c) => c.fn === "createOffer")).toBeFalsy();
+  });
+
+  it("wantsToBookSurvey with slots -> offer message is buildSlotOfferMessage output, createOffer + setStatus(booking_offered)", async () => {
+    const deps = makeDeps({
+      async runTurn() {
+        deps.calls.push({ fn: "runTurn", args: Array.from(arguments) });
+        return {
+          data: {
+            replyMessage: "Sure, let me find times",
+            extractedFields: {},
+            wantsToBookSurvey: true,
+            wantsHuman: false,
+            needsTeamFollowUp: false,
+          },
+          providerUsed: "gemini",
+          wasFailover: false,
+        };
+      },
+    });
+
+    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "book survey", attachmentType: null };
     const result = await handleInstagramMessage(event, deps, now);
 
     expect(result.status).toBe("replied");
-    expect(deps.calls.find((c) => c.fn === "runTurn")).toBeTruthy();
+    const sendCalls = deps.calls.filter((c) => c.fn === "sendText");
+    expect(sendCalls.length).toBe(2);
+    expect(sendCalls[1].args[0].text).toBe(buildSlotOfferMessage([
+      { label: "Mon at 10:00 AM", datetime: new Date("2026-10-21T10:00:00.000Z").toISOString() },
+      { label: "Tue at 2:00 PM", datetime: new Date("2026-10-22T14:00:00.000Z").toISOString() },
+    ]));
+    expect(deps.calls.find((c) => c.fn === "createOffer")).toBeTruthy();
+    expect(deps.calls.find((c) => c.fn === "setStatus")?.args).toEqual(["l1", "booking_offered"]);
+  });
+
+  it("wantsToBookSurvey on booked lead -> setStatus(booked)", async () => {
+    const deps = makeDeps({
+      async resolveEnquiry() {
+        deps.calls.push({ fn: "resolveEnquiry", args: Array.from(arguments) });
+        return {
+          leadId: "l1",
+          contactId: "c1",
+          status: "booked",
+          humanTakeover: false,
+          createdEnquiry: false,
+        };
+      },
+      async runTurn() {
+        deps.calls.push({ fn: "runTurn", args: Array.from(arguments) });
+        return {
+          data: {
+            replyMessage: "Sure",
+            extractedFields: {},
+            wantsToBookSurvey: true,
+            wantsHuman: false,
+            needsTeamFollowUp: false,
+          },
+          providerUsed: "gemini",
+          wasFailover: false,
+        };
+      },
+    });
+
+    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "book survey", attachmentType: null };
+    await handleInstagramMessage(event, deps, now);
+
+    expect(deps.calls.find((c) => c.fn === "setStatus")?.args).toEqual(["l1", "booked"]);
+  });
+
+  it("wantsToBookSurvey with no slots -> NO_SLOTS_MESSAGE sent, escalated, no createOffer", async () => {
+    const deps = makeDeps({
+      async runTurn() {
+        deps.calls.push({ fn: "runTurn", args: Array.from(arguments) });
+        return {
+          data: {
+            replyMessage: "Sure",
+            extractedFields: {},
+            wantsToBookSurvey: true,
+            wantsHuman: false,
+            needsTeamFollowUp: false,
+          },
+          providerUsed: "gemini",
+          wasFailover: false,
+        };
+      },
+      surveyBooking: {
+        async getSlotOptions() {
+          deps.calls.push({ fn: "surveyBooking.getSlotOptions", args: Array.from(arguments) });
+          return [];
+        },
+        async claimSlot() {
+          deps.calls.push({ fn: "surveyBooking.claimSlot", args: Array.from(arguments) });
+          throw new Error("should not be called");
+        },
+      },
+    });
+
+    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "book survey", attachmentType: null };
+    await handleInstagramMessage(event, deps, now);
+
+    const sendCalls = deps.calls.filter((c) => c.fn === "sendText");
+    expect(sendCalls.some((c) => c.args[0].text === NO_SLOTS_MESSAGE)).toBe(true);
+    expect(deps.calls.find((c) => c.fn === "setEscalated")).toBeTruthy();
+    expect(deps.calls.find((c) => c.fn === "createOffer")).toBeFalsy();
+  });
+
+  it("offer 20 min ago on booking_offered + wantsToBookSurvey -> fresh slots re-offered; 5 min ago -> not re-offered", async () => {
+    const oldSlots = [
+      { label: "Mon at 10:00 AM", datetime: new Date(now.getTime() + 86400000).toISOString() },
+    ];
+
+    const deps1 = makeDeps({
+      async resolveEnquiry() {
+        deps1.calls.push({ fn: "resolveEnquiry", args: Array.from(arguments) });
+        return {
+          leadId: "l1",
+          contactId: "c1",
+          status: "booking_offered",
+          humanTakeover: false,
+          createdEnquiry: false,
+        };
+      },
+      async getOpenOffer() {
+        deps1.calls.push({ fn: "getOpenOffer", args: Array.from(arguments) });
+        return { id: "o1", slotOptions: JSON.stringify(oldSlots), offeredAt: new Date(now.getTime() - 20 * 60000) };
+      },
+      async runTurn() {
+        deps1.calls.push({ fn: "runTurn", args: Array.from(arguments) });
+        return {
+          data: {
+            replyMessage: "Sure",
+            extractedFields: {},
+            wantsToBookSurvey: true,
+            wantsHuman: false,
+            needsTeamFollowUp: false,
+          },
+          providerUsed: "gemini",
+          wasFailover: false,
+        };
+      },
+    });
+
+    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "book survey", attachmentType: null };
+    await handleInstagramMessage(event, deps1, now);
+
+    expect(deps1.calls.filter((c) => c.fn === "createOffer").length).toBeGreaterThan(0);
+
+    const deps2 = makeDeps({
+      async resolveEnquiry() {
+        deps2.calls.push({ fn: "resolveEnquiry", args: Array.from(arguments) });
+        return {
+          leadId: "l1",
+          contactId: "c1",
+          status: "booking_offered",
+          humanTakeover: false,
+          createdEnquiry: false,
+        };
+      },
+      async getOpenOffer() {
+        deps2.calls.push({ fn: "getOpenOffer", args: Array.from(arguments) });
+        return { id: "o1", slotOptions: JSON.stringify(oldSlots), offeredAt: new Date(now.getTime() - 5 * 60000) };
+      },
+      async runTurn() {
+        deps2.calls.push({ fn: "runTurn", args: Array.from(arguments) });
+        return {
+          data: {
+            replyMessage: "Sure",
+            extractedFields: {},
+            wantsToBookSurvey: true,
+            wantsHuman: false,
+            needsTeamFollowUp: false,
+          },
+          providerUsed: "gemini",
+          wasFailover: false,
+        };
+      },
+    });
+
+    await handleInstagramMessage(event, deps2, now);
+
+    expect(deps2.calls.find((c) => c.fn === "createOffer")).toBeFalsy();
+  });
+
+  it("an Instagram reply never contains the Great! text twice", async () => {
+    const deps = makeDeps({
+      async runTurn() {
+        deps.calls.push({ fn: "runTurn", args: Array.from(arguments) });
+        return {
+          data: {
+            replyMessage: "Sure",
+            extractedFields: {},
+            wantsToBookSurvey: true,
+            wantsHuman: false,
+            needsTeamFollowUp: false,
+          },
+          providerUsed: "gemini",
+          wasFailover: false,
+        };
+      },
+    });
+
+    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "book survey", attachmentType: null };
+    await handleInstagramMessage(event, deps, now);
+
+    const sendCalls = deps.calls.filter((c) => c.fn === "sendText");
+    const allText = sendCalls.map((c) => c.args[0].text).join("\n");
+    const greatCount = (allText.match(/Great!/g) || []).length;
+    expect(greatCount).toBeLessThanOrEqual(1);
   });
 
   it("escalates on wantsHuman and needsTeamFollowUp", async () => {
@@ -380,35 +773,6 @@ describe("handleInstagramMessage", () => {
 
     await handleInstagramMessage(event, deps2, now);
     expect(deps2.calls.find((c) => c.fn === "setEscalated")).toBeTruthy();
-  });
-
-  it("offers survey slots when wantsToBookSurvey and policy allows", async () => {
-    const deps = makeDeps({
-      async runTurn() {
-        deps.calls.push({ fn: "runTurn", args: Array.from(arguments) });
-        return {
-          data: {
-            replyMessage: "Sure, let me find times",
-            extractedFields: {},
-            wantsToBookSurvey: true,
-            wantsHuman: false,
-            needsTeamFollowUp: false,
-          },
-          providerUsed: "gemini",
-          wasFailover: false,
-        };
-      },
-    });
-
-    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "book survey", attachmentType: null };
-    const result = await handleInstagramMessage(event, deps, now);
-
-    expect(result.status).toBe("replied");
-    const sendCalls = deps.calls.filter((c) => c.fn === "sendText");
-    expect(sendCalls.length).toBe(2);
-    expect(sendCalls[1].args[0].text).toContain("1.");
-    expect(deps.calls.find((c) => c.fn === "createOffer")).toBeTruthy();
-    expect(deps.calls.find((c) => c.fn === "setStatus")?.args).toEqual(["l1", "booking_offered"]);
   });
 
   it("calls ensureProfile when contactNeedsProfile true", async () => {
@@ -467,43 +831,7 @@ describe("handleInstagramMessage", () => {
     expect(deps.calls.find((c) => c.fn === "ensureProfile")).toBeTruthy();
   });
 
-  it("calls notifyAdmin for booking_confirmed with slot label", async () => {
-    const slotOptions = [
-      { label: "Mon at 10:00 AM", datetime: new Date(now.getTime() + 86400000).toISOString() },
-      { label: "Tue at 2:00 PM", datetime: new Date(now.getTime() + 2 * 86400000).toISOString() },
-    ];
-
-    const deps = makeDeps({
-      async resolveEnquiry() {
-        deps.calls.push({ fn: "resolveEnquiry", args: Array.from(arguments) });
-        return {
-          leadId: "l1",
-          contactId: "c1",
-          contactNeedsProfile: false,
-          status: "booking_offered",
-          humanTakeover: false,
-          createdEnquiry: false,
-        };
-      },
-      async getOpenOffer() {
-        deps.calls.push({ fn: "getOpenOffer", args: Array.from(arguments) });
-        return { id: "o1", slotOptions: JSON.stringify(slotOptions) };
-      },
-    });
-
-    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "2", attachmentType: null };
-    await handleInstagramMessage(event, deps, now);
-
-    const notifyCall = deps.calls.find((c) => c.fn === "notifyAdmin");
-    expect(notifyCall).toBeTruthy();
-    expect(notifyCall?.args[0]).toMatchObject({
-      type: "booking_confirmed",
-      leadId: "l1",
-      slotLabel: "Tue at 2:00 PM",
-    });
-  });
-
-  it("calls notifyAdmin for wantsHuman and sends ack", async () => {
+  it("calls notifyAdmin for human_requested and sends ack", async () => {
     const deps = makeDeps({
       async runTurn() {
         deps.calls.push({ fn: "runTurn", args: Array.from(arguments) });
@@ -629,5 +957,30 @@ describe("handleInstagramMessage", () => {
     expect(result.status).toBe("replied");
     expect(deps.calls.find((c) => c.fn === "notifyAdmin")).toBeUndefined();
     expect(deps.calls.find((c) => c.fn === "setEscalated")).toBeUndefined();
+  });
+
+  it("falls through to AI when booking_offered but text is not a slot selection", async () => {
+    const deps = makeDeps({
+      async resolveEnquiry() {
+        deps.calls.push({ fn: "resolveEnquiry", args: Array.from(arguments) });
+        return {
+          leadId: "l1",
+          contactId: "c1",
+          status: "booking_offered",
+          humanTakeover: false,
+          createdEnquiry: false,
+        };
+      },
+      async getOpenOffer() {
+        deps.calls.push({ fn: "getOpenOffer", args: Array.from(arguments) });
+        return { id: "o1", slotOptions: JSON.stringify([{ label: "Mon", datetime: new Date(now.getTime() + 86400000).toISOString() }]), offeredAt: new Date(now.getTime() - 300000) };
+      },
+    });
+
+    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "3 bhk", attachmentType: null };
+    const result = await handleInstagramMessage(event, deps, now);
+
+    expect(result.status).toBe("replied");
+    expect(deps.calls.find((c) => c.fn === "runTurn")).toBeTruthy();
   });
 });

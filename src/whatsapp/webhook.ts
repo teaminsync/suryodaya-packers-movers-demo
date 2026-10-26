@@ -88,9 +88,10 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
   const { offerSurveySlots, resolveSlotChoice } = await import("../flows/survey-booking.js");
   const { surveyBookingDeps, surveyCancelDeps } = await import("../flows/survey-booking-db.js");
   const { evaluateSlotReply } = await import("../flows/slot-reply.js");
-  const { planCancelPrevious, shouldHandleSlotReply, statusWhenOfferingSlots } = await import("../flows/rebooking.js");
+  const { shouldHandleSlotReply, statusWhenOfferingSlots } = await import("../flows/rebooking.js");
   const { shouldOfferSurveySlots } = await import("../flows/slot-offer-policy.js");
   const { getBallparkRange } = await import("../company/profile.js");
+  const { finalizeConfirmedBooking } = await import("../flows/booking-finalize.js");
   const { whatsappClient } = await import("./client.js");
   const { buttonTapAsText, toIntentInput } = await import("../outreach/webhook-input.js");
   const { classifyInboundIntent } = await import("../outreach/messages.js");
@@ -388,34 +389,29 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
                 if (resolution.kind === "confirmed") {
                   const claim = resolution.claim;
                   console.log("[Webhook] Slot selected:", resolution.slot.label, { calendarStatus: claim.status });
-                  let cancelPlan = planCancelPrevious(undefined);
-                  if (claim.status === "created") {
-                    try {
-                      cancelPlan = planCancelPrevious(await findPreviousConfirmedOffer(lead.id, openOffer.id));
-                    } catch (error) {
-                      console.error("[Webhook] Could not look up the previous survey booking:", error instanceof Error ? error.message : String(error));
+                  const outcome = await finalizeConfirmedBooking(
+                    {
+                      findPreviousConfirmedOffer: (leadId, excludeOfferId) => findPreviousConfirmedOffer(leadId, excludeOfferId),
+                      recordSlotSelection: (offerId, label) => recordSlotSelection(offerId, label),
+                      recordSurveyCalendar: (offerId, info) => recordSurveyCalendar(offerId, info),
+                      setBooked: (leadId) => setLeadStatus(leadId, "booked"),
+                      sendConfirmation: (text) => sendSystemText(lead.id, whatsappNumber, text),
+                      notifyBooked: (slotLabel) => {
+                        void adminNotifier.notifyLead({ type: "booking_confirmed", leadId: lead.id, lastMessage: null, slotLabel }).catch(() => {});
+                      },
+                      cancelEvent: surveyCancelDeps.cancelEvent,
+                      markOfferCalendarCancelled,
+                      warn: (message, detail) => console.error("[Webhook]", message, detail ?? ""),
+                    },
+                    {
+                      leadId: lead.id,
+                      offerId: openOffer.id,
+                      slot: resolution.slot,
+                      message: resolution.message,
+                      claim,
                     }
-                  }
-                  await recordSlotSelection(openOffer.id, resolution.slot.label);
-                  try {
-                    await recordSurveyCalendar(openOffer.id, { startsAt: claim.startsAt, endsAt: claim.endsAt, status: claim.status, eventId: claim.eventId, eventLink: claim.eventLink });
-                  } catch (error) {
-                    console.error("[Webhook] Could not record survey calendar details:", error instanceof Error ? error.message : String(error));
-                  }
-                  await setLeadStatus(lead.id, "booked");
-                  await sendSystemText(lead.id, whatsappNumber, resolution.message);
-                  void adminNotifier.notifyLead({ type: "booking_confirmed", leadId: lead.id, lastMessage: null, slotLabel: resolution.slot.label }).catch(() => {});
-                  if (cancelPlan.kind === "cancel") {
-                    try {
-                      const cancelled = await surveyCancelDeps.cancelEvent(cancelPlan.eventId);
-                      if (cancelled.ok && cancelled.status === "cancelled") {
-                        await markOfferCalendarCancelled(cancelPlan.offerId);
-                      }
-                      console.log("[Webhook] Previous survey event cancel:", { leadId: lead.id, offerId: cancelPlan.offerId, result: cancelled.ok ? cancelled.status : "failed" });
-                    } catch (error) {
-                      console.error("[Webhook] Could not cancel the previous survey event:", error instanceof Error ? error.message : String(error), { eventId: cancelPlan.eventId });
-                    }
-                  }
+                  );
+                  console.log("[Webhook] Previous survey event cancel:", { leadId: lead.id, result: outcome.cancel });
                   console.log("[Webhook] Booking confirmed for lead:", lead.id);
                   continue;
                 }
