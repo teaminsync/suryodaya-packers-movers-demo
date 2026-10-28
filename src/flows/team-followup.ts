@@ -65,7 +65,7 @@ export function shouldAlertTeamFollowUp(input: TeamFollowUpInput): TeamFollowUpD
   const hoursSinceEscalation = (now.getTime() - escalatedDate.getTime()) / (1000 * 60 * 60);
 
   if (hoursSinceEscalation >= reAlertAfterHours) {
-    return { alert: true, markEscalated: false };
+    return { alert: true, markEscalated: true };
   }
 
   return { alert: false, markEscalated: false };

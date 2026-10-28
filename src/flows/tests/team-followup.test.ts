@@ -58,7 +58,7 @@ describe("shouldAlertTeamFollowUp", () => {
       now,
     });
 
-    expect(result).toEqual({ alert: true, markEscalated: false });
+    expect(result).toEqual({ alert: true, markEscalated: true });
   });
 
   it("does not alert when escalatedAt is 5h59m old", () => {
@@ -86,7 +86,7 @@ describe("shouldAlertTeamFollowUp", () => {
       now,
     });
 
-    expect(result).toEqual({ alert: true, markEscalated: false });
+    expect(result).toEqual({ alert: true, markEscalated: true });
   });
 
   it("alerts when escalatedAt is 10 hours old", () => {
@@ -100,7 +100,7 @@ describe("shouldAlertTeamFollowUp", () => {
       now,
     });
 
-    expect(result).toEqual({ alert: true, markEscalated: false });
+    expect(result).toEqual({ alert: true, markEscalated: true });
   });
 
   it("does not alert when escalatedAt is null", () => {
@@ -123,6 +123,19 @@ describe("shouldAlertTeamFollowUp", () => {
       replyPromisesTeam: false,
       escalated: true,
       escalatedAt: "invalid-date",
+      now,
+    });
+
+    expect(result).toEqual({ alert: false, markEscalated: false });
+  });
+
+  it("does not alert when just re-alerted (escalatedAt = now)", () => {
+    const result = shouldAlertTeamFollowUp({
+      humanRequested: false,
+      needsTeamFollowUp: true,
+      replyPromisesTeam: false,
+      escalated: true,
+      escalatedAt: now,
       now,
     });
 

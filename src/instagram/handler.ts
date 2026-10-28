@@ -279,7 +279,7 @@ export async function handleInstagramMessage(
 
   const humanRequested = turn.data.wantsHuman || looksLikeHumanRequest(event.text);
 
-  if (humanRequested || turn.data.needsTeamFollowUp) {
+  if (humanRequested) {
     await deps.setEscalated(resolved.leadId);
   }
 
