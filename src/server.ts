@@ -48,6 +48,29 @@ await initializeDatabase();
 await aiRouter.initialize();
 console.log("\u2705 AI Router initialized");
 
+// Check AI chain configuration
+const { aiChainWarnings } = await import("./ai/startup-warnings.js");
+const { resolveChain, defaultTextChain, defaultImageChain } = await import("./ai/chain-config.js");
+
+const aiKeys = {
+  claude: !!process.env.ANTHROPIC_API_KEY,
+  gemini: !!process.env.GEMINI_API_KEY,
+  groq: !!process.env.GROQ_API_KEY,
+};
+
+const textChainResolved = resolveChain(process.env.AI_TEXT_CHAIN, aiKeys, defaultTextChain(aiKeys));
+const imageChainResolved = resolveChain(process.env.AI_IMAGE_CHAIN, aiKeys, defaultImageChain(aiKeys));
+
+const warnings = aiChainWarnings({
+  anthropicKeySet: aiKeys.claude,
+  textChain: textChainResolved.names,
+  imageChain: imageChainResolved.names,
+});
+
+for (const warning of warnings) {
+  console.warn(`[AI Router] ${warning}`);
+}
+
 // Parse JSON bodies
 app.use(
   express.json({

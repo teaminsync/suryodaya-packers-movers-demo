@@ -758,16 +758,30 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
             const followUpNeeded =
               !humanRequested &&
               (turnResult.data.needsTeamFollowUp || promisesTeamFollowUp(turnResult.data.replyMessage));
-            if (followUpNeeded && !lead.escalated) {
-              await setLeadEscalated(lead.id);
-              console.log("[Webhook] Flagged for team follow-up (reply promised a team confirmation):", { leadId: lead.id, byModel: turnResult.data.needsTeamFollowUp });
-              
-              void adminNotifier.notifyLead({
-                type: "needs_followup",
-                leadId: lead.id,
-                lastMessage: messageText,
-                slotLabel: null,
-              }).catch(() => {});
+            if (followUpNeeded) {
+              const { shouldAlertTeamFollowUp } = await import("../flows/team-followup.js");
+              const decision = shouldAlertTeamFollowUp({
+                humanRequested,
+                needsTeamFollowUp: turnResult.data.needsTeamFollowUp,
+                replyPromisesTeam: promisesTeamFollowUp(turnResult.data.replyMessage),
+                escalated: lead.escalated,
+                escalatedAt: lead.escalated_at,
+                now: new Date(),
+              });
+
+              if (decision.markEscalated) {
+                await setLeadEscalated(lead.id);
+              }
+
+              if (decision.alert) {
+                console.log("[Webhook] Flagged for team follow-up (reply promised a team confirmation):", { leadId: lead.id, byModel: turnResult.data.needsTeamFollowUp });
+                void adminNotifier.notifyLead({
+                  type: "needs_followup",
+                  leadId: lead.id,
+                  lastMessage: messageText,
+                  slotLabel: null,
+                }).catch(() => {});
+              }
             }
 
             // Send quick-reply options (if this is a substantive turn)

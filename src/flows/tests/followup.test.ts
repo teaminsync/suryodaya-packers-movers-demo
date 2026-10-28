@@ -26,6 +26,26 @@ describe("promisesTeamFollowUp", () => {
     expect(promisesTeamFollowUp(text)).toBe(false);
   });
 
+  it("should detect 'I'll check with the team'", () => {
+    const text = "I'll check with the team and get back to you shortly.";
+    expect(promisesTeamFollowUp(text)).toBe(true);
+  });
+
+  it("should detect 'let me get back to you'", () => {
+    const text = "Let me get back to you on that once I confirm with the team.";
+    expect(promisesTeamFollowUp(text)).toBe(true);
+  });
+
+  it("should detect 'our team will confirm'", () => {
+    const text = "Our team will confirm the exact pricing for special items.";
+    expect(promisesTeamFollowUp(text)).toBe(true);
+  });
+
+  it("should NOT match general team reference", () => {
+    const text = "Our team is ready to help with your move whenever you need.";
+    expect(promisesTeamFollowUp(text)).toBe(false);
+  });
+
   it("should reject turnResponse without needsTeamFollowUp field", () => {
     const result = turnResponseSchema.safeParse({
       extractedFields: {},

@@ -44,6 +44,8 @@ export interface InstagramDeps {
     status: string;
     humanTakeover: boolean;
     createdEnquiry: boolean;
+    escalated: boolean;
+    escalatedAt: string | null;
   }>;
   ensureProfile(contactId: string, igsid: string): Promise<void>;
   logMessage(input: {
@@ -314,18 +316,34 @@ export async function handleInstagramMessage(
   }
 
   if (followUpNeeded) {
-    try {
-      await deps.notifyAdmin({
-        type: "needs_followup",
-        leadId: resolved.leadId,
-        lastMessage: event.text,
-        slotLabel: null,
-      });
-    } catch (error) {
-      console.log(
-        "[Instagram] Admin notify failed:",
-        error instanceof Error ? error.message : String(error)
-      );
+    const { shouldAlertTeamFollowUp } = await import("../flows/team-followup.js");
+    const decision = shouldAlertTeamFollowUp({
+      humanRequested,
+      needsTeamFollowUp: turn.data.needsTeamFollowUp,
+      replyPromisesTeam: promisesTeamFollowUp(turn.data.replyMessage),
+      escalated: resolved.escalated,
+      escalatedAt: resolved.escalatedAt,
+      now,
+    });
+
+    if (decision.markEscalated) {
+      await deps.setEscalated(resolved.leadId);
+    }
+
+    if (decision.alert) {
+      try {
+        await deps.notifyAdmin({
+          type: "needs_followup",
+          leadId: resolved.leadId,
+          lastMessage: event.text,
+          slotLabel: null,
+        });
+      } catch (error) {
+        console.log(
+          "[Instagram] Admin notify failed:",
+          error instanceof Error ? error.message : String(error)
+        );
+      }
     }
   }
 

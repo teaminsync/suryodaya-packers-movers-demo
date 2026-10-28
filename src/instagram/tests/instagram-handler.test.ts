@@ -38,6 +38,8 @@ function makeDeps(overrides: Partial<InstagramDeps> = {}): InstagramDeps & { cal
         status: "new",
         humanTakeover: false,
         createdEnquiry: false,
+        escalated: false,
+        escalatedAt: null,
       };
     },
     async ensureProfile() {
@@ -982,5 +984,162 @@ describe("handleInstagramMessage", () => {
 
     expect(result.status).toBe("replied");
     expect(deps.calls.find((c) => c.fn === "runTurn")).toBeTruthy();
+  });
+
+  it("AI needsTeamFollowUp true -> needs_followup alert sent", async () => {
+    const deps = makeDeps({
+      async resolveEnquiry() {
+        deps.calls.push({ fn: "resolveEnquiry", args: Array.from(arguments) });
+        return {
+          leadId: "l1",
+          contactId: "c1",
+          contactNeedsProfile: false,
+          status: "gathering",
+          humanTakeover: false,
+          createdEnquiry: false,
+          escalated: false,
+          escalatedAt: null,
+        };
+      },
+      async runTurn() {
+        deps.calls.push({ fn: "runTurn", args: Array.from(arguments) });
+        return {
+          data: {
+            replyMessage: "Got it",
+            extractedFields: {},
+            wantsToBookSurvey: false,
+            wantsHuman: false,
+            needsTeamFollowUp: true,
+          },
+          providerUsed: "gemini",
+          wasFailover: false,
+        };
+      },
+    });
+
+    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "question", attachmentType: null };
+    await handleInstagramMessage(event, deps, now);
+
+    expect(deps.calls.find((c) => c.fn === "setEscalated")).toBeTruthy();
+    expect(deps.calls.find((c) => c.fn === "notifyAdmin")?.args[0].type).toBe("needs_followup");
+  });
+
+  it("reply text promises team check with needsTeamFollowUp false -> alert sent", async () => {
+    const deps = makeDeps({
+      async resolveEnquiry() {
+        deps.calls.push({ fn: "resolveEnquiry", args: Array.from(arguments) });
+        return {
+          leadId: "l1",
+          contactId: "c1",
+          contactNeedsProfile: false,
+          status: "gathering",
+          humanTakeover: false,
+          createdEnquiry: false,
+          escalated: false,
+          escalatedAt: null,
+        };
+      },
+      async runTurn() {
+        deps.calls.push({ fn: "runTurn", args: Array.from(arguments) });
+        return {
+          data: {
+            replyMessage: "I'll check with the team and get back to you",
+            extractedFields: {},
+            wantsToBookSurvey: false,
+            wantsHuman: false,
+            needsTeamFollowUp: false,
+          },
+          providerUsed: "gemini",
+          wasFailover: false,
+        };
+      },
+    });
+
+    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "question", attachmentType: null };
+    await handleInstagramMessage(event, deps, now);
+
+    expect(deps.calls.find((c) => c.fn === "setEscalated")).toBeTruthy();
+    expect(deps.calls.find((c) => c.fn === "notifyAdmin")?.args[0].type).toBe("needs_followup");
+  });
+
+  it("already-escalated lead escalated 1h ago -> no alert", async () => {
+    const escalatedAt = new Date(now.getTime() - 1 * 60 * 60 * 1000);
+    const deps = makeDeps({
+      async resolveEnquiry() {
+        deps.calls.push({ fn: "resolveEnquiry", args: Array.from(arguments) });
+        return {
+          leadId: "l1",
+          contactId: "c1",
+          contactNeedsProfile: false,
+          status: "gathering",
+          humanTakeover: false,
+          createdEnquiry: false,
+          escalated: true,
+          escalatedAt: escalatedAt.toISOString(),
+        };
+      },
+      async runTurn() {
+        deps.calls.push({ fn: "runTurn", args: Array.from(arguments) });
+        return {
+          data: {
+            replyMessage: "I'll check with the team",
+            extractedFields: {},
+            wantsToBookSurvey: false,
+            wantsHuman: false,
+            needsTeamFollowUp: true,
+          },
+          providerUsed: "gemini",
+          wasFailover: false,
+        };
+      },
+    });
+
+    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "question", attachmentType: null };
+    await handleInstagramMessage(event, deps, now);
+
+    const escalateCalls = deps.calls.filter((c) => c.fn === "setEscalated");
+    expect(escalateCalls.length).toBe(1);
+    const notifyCalls = deps.calls.filter((c) => c.fn === "notifyAdmin");
+    expect(notifyCalls.length).toBe(0);
+  });
+
+  it("already-escalated lead escalated 10h ago -> alert, setEscalated NOT called again", async () => {
+    const escalatedAt = new Date(now.getTime() - 10 * 60 * 60 * 1000);
+    const deps = makeDeps({
+      async resolveEnquiry() {
+        deps.calls.push({ fn: "resolveEnquiry", args: Array.from(arguments) });
+        return {
+          leadId: "l1",
+          contactId: "c1",
+          contactNeedsProfile: false,
+          status: "gathering",
+          humanTakeover: false,
+          createdEnquiry: false,
+          escalated: true,
+          escalatedAt: escalatedAt.toISOString(),
+        };
+      },
+      async runTurn() {
+        deps.calls.push({ fn: "runTurn", args: Array.from(arguments) });
+        return {
+          data: {
+            replyMessage: "Let me confirm with the team",
+            extractedFields: {},
+            wantsToBookSurvey: false,
+            wantsHuman: false,
+            needsTeamFollowUp: true,
+          },
+          providerUsed: "gemini",
+          wasFailover: false,
+        };
+      },
+    });
+
+    const event = { igsid: "IG1", accountId: "ACC1", mid: "m1", timestamp: null, text: "question", attachmentType: null };
+    await handleInstagramMessage(event, deps, now);
+
+    const escalateCalls = deps.calls.filter((c) => c.fn === "setEscalated");
+    expect(escalateCalls.length).toBe(1);
+    expect(deps.calls.find((c) => c.fn === "notifyAdmin")?.args[0].type).toBe("needs_followup");
   });
 });

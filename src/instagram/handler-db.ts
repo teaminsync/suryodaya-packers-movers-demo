@@ -77,6 +77,8 @@ export const instagramDeps: InstagramDeps = {
       status: resolved.lead.status,
       humanTakeover: resolved.lead.human_takeover,
       createdEnquiry: resolved.createdEnquiry,
+      escalated: resolved.lead.escalated,
+      escalatedAt: resolved.lead.escalated_at,
     };
   },
 
