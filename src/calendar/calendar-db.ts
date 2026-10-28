@@ -11,6 +11,7 @@ import { createSurveyCalendar } from "./survey-calendar.js";
 import { buildSurveyEventContent } from "./event-content.js";
 import { loadAdminEventBase } from "../notify/notify-db.js";
 import { generateSlotOptions } from "../flows/booking.js";
+import { surveyConfigProvider } from "./settings-db.js";
 
 // Parse survey config
 const { config, warnings } = parseSurveyConfig(process.env);
@@ -89,6 +90,7 @@ async function buildEventContent(leadId: string): Promise<{
 // Create the survey calendar
 export const surveyCalendar = createSurveyCalendar({
   config,
+  getConfig: async () => (await surveyConfigProvider.get()).config,
   calendar,
   staticSlots,
   buildEventContent,

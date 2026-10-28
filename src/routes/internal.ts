@@ -6,9 +6,21 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { createOutreachApi } from "../outreach/api.js";
 import { outreachApiDeps } from "../outreach/service-db.js";
+import { createSurveySettingsApi } from "../calendar/settings-api.js";
+import {
+  surveyConfigProvider,
+  saveSurveySettings,
+  resetSurveySettings,
+} from "../calendar/settings-db.js";
 
 const router = Router();
 const outreachApi = createOutreachApi(outreachApiDeps);
+const surveySettingsApi = createSurveySettingsApi({
+  getEffective: () => surveyConfigProvider.get(),
+  save: saveSurveySettings,
+  reset: resetSurveySettings,
+  invalidate: () => surveyConfigProvider.invalidate(),
+});
 
 function requireInternalSecret(req: Request, res: Response, next: NextFunction): void {
   const secret = process.env.INTERNAL_API_SECRET;
@@ -177,6 +189,45 @@ router.post("/leads/:id/outreach/followup", async (req: Request, res: Response) 
   } catch (error) {
     console.error(
       "[Internal] Outreach request failed:",
+      error instanceof Error ? error.message : String(error)
+    );
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
+router.get("/survey-settings", async (_req: Request, res: Response) => {
+  try {
+    const r = await surveySettingsApi.getSettings();
+    res.status(r.status).json(r.json);
+  } catch (error) {
+    console.error(
+      "[Internal] Survey settings request failed:",
+      error instanceof Error ? error.message : String(error)
+    );
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
+router.put("/survey-settings", async (req: Request, res: Response) => {
+  try {
+    const r = await surveySettingsApi.putSettings(req.body);
+    res.status(r.status).json(r.json);
+  } catch (error) {
+    console.error(
+      "[Internal] Survey settings request failed:",
+      error instanceof Error ? error.message : String(error)
+    );
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
+router.post("/survey-settings/reset", async (_req: Request, res: Response) => {
+  try {
+    const r = await surveySettingsApi.resetSettings();
+    res.status(r.status).json(r.json);
+  } catch (error) {
+    console.error(
+      "[Internal] Survey settings request failed:",
       error instanceof Error ? error.message : String(error)
     );
     res.status(500).json({ error: "internal error" });

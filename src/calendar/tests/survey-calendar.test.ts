@@ -540,4 +540,109 @@ describe("Survey calendar", () => {
       expect(result.error).toBe("Delete failed");
     }
   });
+
+  it("getConfig returning holidays that remove a day removes that day's slots", async () => {
+    const mockCalendar = {
+      async freeBusy(): Promise<BusyInterval[]> {
+        return [];
+      },
+      async insertEvent() {
+        return { id: "event-1", htmlLink: null };
+      },
+    };
+
+    const configWithoutHoliday = { ...config, holidays: [] };
+    const configWithHoliday = { ...config, holidays: ["2026-10-21"] };
+
+    const calendar = createSurveyCalendar({
+      config: configWithoutHoliday,
+      getConfig: async () => configWithHoliday,
+      calendar: mockCalendar,
+      staticSlots: () => [],
+      buildEventContent: async () => ({
+        summary: "Test",
+        description: "Test",
+        location: null,
+      }),
+    });
+
+    const slots = await calendar.getSlotOptions(now);
+
+    expect(slots).toEqual([
+      { label: "Tue, 20 Oct at 3:00 PM", datetime: "2026-10-20T09:30:00.000Z" },
+      { label: "Thu, 22 Oct at 2:00 PM", datetime: "2026-10-22T08:30:00.000Z" },
+      { label: "Fri, 23 Oct at 10:00 AM", datetime: "2026-10-23T04:30:00.000Z" },
+    ]);
+  });
+
+  it("getConfig that throws falls back to deps.config", async () => {
+    const mockCalendar = {
+      async freeBusy(): Promise<BusyInterval[]> {
+        return [];
+      },
+      async insertEvent() {
+        return { id: "event-1", htmlLink: null };
+      },
+    };
+
+    const configWithHoliday = { ...config, holidays: ["2026-10-21"] };
+
+    const calendar = createSurveyCalendar({
+      config: configWithHoliday,
+      getConfig: async () => {
+        throw new Error("Config load failed");
+      },
+      calendar: mockCalendar,
+      staticSlots: () => [],
+      buildEventContent: async () => ({
+        summary: "Test",
+        description: "Test",
+        location: null,
+      }),
+    });
+
+    const slots = await calendar.getSlotOptions(now);
+
+    expect(slots).toEqual([
+      { label: "Tue, 20 Oct at 3:00 PM", datetime: "2026-10-20T09:30:00.000Z" },
+      { label: "Thu, 22 Oct at 2:00 PM", datetime: "2026-10-22T08:30:00.000Z" },
+      { label: "Fri, 23 Oct at 10:00 AM", datetime: "2026-10-23T04:30:00.000Z" },
+    ]);
+  });
+
+  it("claimSlot uses the getConfig duration", async () => {
+    const mockCalendar = {
+      async freeBusy(): Promise<BusyInterval[]> {
+        return [];
+      },
+      async insertEvent() {
+        return { id: "event-1", htmlLink: null };
+      },
+    };
+
+    const configWith30Min = { ...config, durationMinutes: 30 };
+
+    const calendar = createSurveyCalendar({
+      config,
+      getConfig: async () => configWith30Min,
+      calendar: mockCalendar,
+      staticSlots: () => [],
+      buildEventContent: async () => ({
+        summary: "Test",
+        description: "Test",
+        location: null,
+      }),
+    });
+
+    const result = await calendar.claimSlot({
+      leadId: "L1",
+      slot: { label: "Test", datetime: "2026-10-20T09:30:00.000Z" },
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.startsAt.toISOString()).toBe("2026-10-20T09:30:00.000Z");
+      expect(result.endsAt.toISOString()).toBe("2026-10-20T10:00:00.000Z");
+    }
+  });
 });

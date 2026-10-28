@@ -302,6 +302,15 @@ async function initSchema(): Promise<void> {
     )
   `;
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS survey_settings (
+      id TEXT PRIMARY KEY,
+      settings TEXT NOT NULL,
+      updated_by TEXT,
+      updated_at TIMESTAMPTZ NOT NULL
+    )
+  `;
+
   // Lock down all tables to server-only access on Supabase (anon/authenticated roles
   // get full table rights by default). Leaves only SELECT on messages for authenticated
   // users, which the dashboard Realtime subscription needs.
@@ -321,8 +330,9 @@ BEGIN
     ALTER TABLE consents ENABLE ROW LEVEL SECURITY;
     ALTER TABLE intake_rejects ENABLE ROW LEVEL SECURITY;
     ALTER TABLE admin_notifications ENABLE ROW LEVEL SECURITY;
-    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents, intake_rejects, admin_notifications FROM anon;
-    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents, intake_rejects, admin_notifications FROM authenticated;
+    ALTER TABLE survey_settings ENABLE ROW LEVEL SECURITY;
+    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents, intake_rejects, admin_notifications, survey_settings FROM anon;
+    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents, intake_rejects, admin_notifications, survey_settings FROM authenticated;
     GRANT SELECT ON TABLE messages TO authenticated;
     IF NOT EXISTS (
       SELECT 1 FROM pg_policies

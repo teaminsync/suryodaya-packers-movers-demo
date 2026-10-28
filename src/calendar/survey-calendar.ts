@@ -24,6 +24,7 @@ export type ClaimResult =
 
 export interface SurveyCalendarDeps {
   config: SurveyConfig;
+  getConfig?(): Promise<SurveyConfig>;
   calendar: {
     freeBusy(timeMin: Date, timeMax: Date): Promise<BusyInterval[]>;
     insertEvent(input: {
@@ -45,6 +46,18 @@ export interface SurveyCalendarDeps {
 }
 
 export function createSurveyCalendar(deps: SurveyCalendarDeps) {
+  async function currentConfig(): Promise<SurveyConfig> {
+    if (!deps.getConfig) {
+      return deps.config;
+    }
+
+    try {
+      return await deps.getConfig();
+    } catch {
+      return deps.config;
+    }
+  }
+
   async function getSlotOptions(
     now: Date
   ): Promise<Array<{ label: string; datetime: string }>> {
@@ -52,14 +65,15 @@ export function createSurveyCalendar(deps: SurveyCalendarDeps) {
       return deps.staticSlots(now);
     }
 
-    const candidates = generateCandidateSlots(now, deps.config);
+    const config = await currentConfig();
+    const candidates = generateCandidateSlots(now, config);
     if (candidates.length === 0) {
       return [];
     }
 
     const earliest = candidates[0].start;
     const latest = candidates[candidates.length - 1].end;
-    const bufferMs = deps.config.bufferMinutes * 60 * 1000;
+    const bufferMs = config.bufferMinutes * 60 * 1000;
     const timeMin = new Date(earliest.getTime() - bufferMs);
     const timeMax = new Date(latest.getTime() + bufferMs);
 
@@ -72,7 +86,7 @@ export function createSurveyCalendar(deps: SurveyCalendarDeps) {
       return deps.staticSlots(now);
     }
 
-    const available = filterAvailable(candidates, busy, deps.config);
+    const available = filterAvailable(candidates, busy, config);
     const options = pickSlotOptions(available);
     return options.map(toOffer);
   }
@@ -81,6 +95,8 @@ export function createSurveyCalendar(deps: SurveyCalendarDeps) {
     leadId: string;
     slot: { label: string; datetime: string };
   }): Promise<ClaimResult> {
+    const config = await currentConfig();
+
     let slotStart: Date;
     try {
       slotStart = new Date(input.slot.datetime);
@@ -93,7 +109,7 @@ export function createSurveyCalendar(deps: SurveyCalendarDeps) {
 
     const startsAt = slotStart;
     const endsAt = new Date(
-      startsAt.getTime() + deps.config.durationMinutes * 60 * 1000
+      startsAt.getTime() + config.durationMinutes * 60 * 1000
     );
 
     if (!deps.calendar) {
@@ -108,7 +124,7 @@ export function createSurveyCalendar(deps: SurveyCalendarDeps) {
     }
 
     // Re-check availability
-    const bufferMs = deps.config.bufferMinutes * 60 * 1000;
+    const bufferMs = config.bufferMinutes * 60 * 1000;
     const timeMin = new Date(startsAt.getTime() - bufferMs);
     const timeMax = new Date(endsAt.getTime() + bufferMs);
 
@@ -125,7 +141,7 @@ export function createSurveyCalendar(deps: SurveyCalendarDeps) {
     }
 
     const candidateSlot = { start: startsAt, end: endsAt };
-    const available = filterAvailable([candidateSlot], busy, deps.config);
+    const available = filterAvailable([candidateSlot], busy, config);
 
     if (available.length === 0) {
       return { ok: false, reason: "conflict" };
