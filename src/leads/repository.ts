@@ -375,9 +375,9 @@ export async function getMediaCapturesForLead(
  */
 export async function getMediaCapturesForDedupe(
   leadId: string
-): Promise<Array<{ room_key: string | null; room_qualifier: string | null; items: string }>> {
-  const result = await sql<Array<{ room_key: string | null; room_qualifier: string | null; items: string }>>`
-    SELECT room_key, room_qualifier, items
+): Promise<Array<{ id: string; room_key: string | null; room_qualifier: string | null; items: string }>> {
+  const result = await sql<Array<{ id: string; room_key: string | null; room_qualifier: string | null; items: string }>>`
+    SELECT id, room_key, room_qualifier, items
     FROM media_captures
     WHERE lead_id = ${leadId}
     ORDER BY created_at ASC

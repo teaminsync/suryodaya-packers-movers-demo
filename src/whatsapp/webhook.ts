@@ -521,6 +521,21 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
                 failover: analysisResult.wasFailover,
               });
 
+              // Check for same-type room collision
+              const { detectSameTypeCollision } = await import("../flows/room-dedupe.js");
+              const sameTypeNoticeLabel = detectSameTypeCollision(
+                {
+                  roomKey: analysisResult.room.roomKey,
+                  qualifier: analysisResult.room.qualifier,
+                  matchedExisting: analysisResult.room.matchedExisting,
+                },
+                groups
+              );
+              
+              if (sameTypeNoticeLabel !== null) {
+                console.log("[Webhook] Same-type room collision:", { leadId: lead.id, label: sameTypeNoticeLabel });
+              }
+
               // Save to database and get the capture ID
               const { createMediaCapture } = await import("../leads/repository.js");
               const mediaCaptureId = await createMediaCapture({
@@ -549,6 +564,7 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
                 items: analysisResult.data.items,
                 addedCubicFeet: analysisResult.totals.cubicFeet,
                 addedWeightKg: analysisResult.totals.weightKg,
+                sameTypeNoticeLabel,
               });
 
               await whatsappClient.sendMessage(whatsappNumber, replyMessage);
@@ -627,10 +643,18 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
 
             // Check for room correction (deterministic parser)
             const { parseRoomCorrection, planRoomCorrection, buildRoomCorrectionReply } = await import("../flows/room-correction.js");
-            if (parseRoomCorrection(messageText) !== null) {
-              const { getLatestMediaCaptureForLead, updateMediaCaptureRoom } = await import("../leads/repository.js");
+            const { isSameRoomReply } = await import("../flows/room-dedupe.js");
+            if (parseRoomCorrection(messageText) !== null || isSameRoomReply(messageText)) {
+              const { getLatestMediaCaptureForLead, updateMediaCaptureRoom, getMediaCapturesForDedupe } = await import("../leads/repository.js");
+              const { buildInventoryGroups } = await import("../flows/rooms.js");
               const latestCapture = await getLatestMediaCaptureForLead(lead.id);
-              const correction = planRoomCorrection({ text: messageText, latest: latestCapture, now: new Date() });
+              
+              // Load existing groups (excluding latest)
+              const rows = await getMediaCapturesForDedupe(lead.id);
+              const filteredRows = latestCapture ? rows.filter(r => r.id !== latestCapture.id) : rows;
+              const existingGroups = buildInventoryGroups(filteredRows);
+              
+              const correction = planRoomCorrection({ text: messageText, latest: latestCapture, now: new Date(), existingGroups });
               const correctionReply = buildRoomCorrectionReply(correction);
               if (correction.kind !== "none" && correctionReply !== null) {
                 if (correction.kind === "relabel") {

@@ -414,5 +414,239 @@ describe("room-correction", () => {
       });
       expect(reply).toBe('Done, I\'ve filed your latest photo under Kitchen. Its items now count toward your move total. Tap "Get My Move Total" to see the updated estimate.');
     });
+
+    it("should return relabel message with matchedCount", () => {
+      const reply = buildRoomCorrectionReply({
+        kind: "relabel",
+        captureId: "cap-1",
+        roomKey: "kitchen",
+        qualifier: null,
+        label: "Kitchen",
+        resetDuplicates: false,
+        itemsJson: JSON.stringify([{ name: "chair", quantity: 2, alreadyCounted: true }]),
+        cubicFeet: 10,
+        weightKg: 15,
+        matchedCount: 2,
+      });
+      expect(reply).toBe('Done, I\'ve filed your latest photo under Kitchen. I matched 2 item(s) to what you\'d already sent for that room, so I haven\'t counted them twice. Tap "Get My Move Total" to see the updated estimate.');
+    });
+  });
+
+  describe("planRoomCorrection with deduplication", () => {
+    const now = new Date("2026-10-21T10:00:00.000Z");
+
+    it("should dedupe when relabelling into group with matching items", () => {
+      const latest: LatestCapture = {
+        id: "cap-1",
+        room_key: "bedroom",
+        room_qualifier: null,
+        suggested_room_label: "Bedroom",
+        items: JSON.stringify([
+          { name: "Chair", quantity: 4, estimatedCubicFeet: 40, estimatedWeightKg: 80, alreadyCounted: false },
+        ]),
+        created_at: new Date("2026-10-21T09:50:00.000Z"),
+      };
+
+      const existingGroups = [
+        {
+          roomKey: "kitchen" as any,
+          qualifier: null,
+          label: "Kitchen",
+          items: [{ name: "Chair", quantity: 2 }],
+        },
+      ];
+
+      const plan = planRoomCorrection({
+        text: "this is the kitchen",
+        latest,
+        now,
+        existingGroups,
+      });
+
+      expect(plan.kind).toBe("relabel");
+      if (plan.kind === "relabel") {
+        expect(plan.matchedCount).toBe(2);
+        expect(plan.itemsJson).toBeTruthy();
+        
+        const items = JSON.parse(plan.itemsJson!);
+        expect(items.length).toBe(2);
+        expect(items[0].quantity).toBe(2);
+        expect(items[0].alreadyCounted).toBe(true);
+        expect(items[1].quantity).toBe(2);
+        expect(items[1].alreadyCounted).toBe(false);
+        
+        expect(plan.cubicFeet).toBe(20);
+        expect(plan.weightKg).toBe(40);
+      }
+    });
+
+    it("should handle same-key same room with matching items", () => {
+      const latest: LatestCapture = {
+        id: "cap-1",
+        room_key: "kitchen",
+        room_qualifier: null,
+        suggested_room_label: "Kitchen",
+        items: JSON.stringify([
+          { name: "Chair", quantity: 4, estimatedCubicFeet: 40, estimatedWeightKg: 80, alreadyCounted: false },
+        ]),
+        created_at: new Date("2026-10-21T09:50:00.000Z"),
+      };
+
+      const existingGroups = [
+        {
+          roomKey: "kitchen" as any,
+          qualifier: null,
+          label: "Kitchen",
+          items: [{ name: "Chair", quantity: 2 }],
+        },
+      ];
+
+      const plan = planRoomCorrection({
+        text: "same room",
+        latest,
+        now,
+        existingGroups,
+      });
+
+      expect(plan.kind).toBe("relabel");
+      if (plan.kind === "relabel") {
+        expect(plan.roomKey).toBe("kitchen");
+        expect(plan.matchedCount).toBe(2);
+      }
+    });
+
+    it("should return unchanged when same-key no matching items", () => {
+      const latest: LatestCapture = {
+        id: "cap-1",
+        room_key: "kitchen",
+        room_qualifier: null,
+        suggested_room_label: "Kitchen",
+        items: JSON.stringify([
+          { name: "Chair", quantity: 4, estimatedCubicFeet: 40, estimatedWeightKg: 80, alreadyCounted: false },
+        ]),
+        created_at: new Date("2026-10-21T09:50:00.000Z"),
+      };
+
+      const existingGroups = [
+        {
+          roomKey: "kitchen" as any,
+          qualifier: null,
+          label: "Kitchen",
+          items: [{ name: "Table", quantity: 1 }],
+        },
+      ];
+
+      const plan = planRoomCorrection({
+        text: "this is the kitchen",
+        latest,
+        now,
+        existingGroups,
+      });
+
+      expect(plan).toEqual({ kind: "unchanged", label: "Kitchen" });
+    });
+
+    it("should return none when same room but room_key is null", () => {
+      const latest: LatestCapture = {
+        id: "cap-1",
+        room_key: null,
+        room_qualifier: null,
+        suggested_room_label: "Bedroom",
+        items: JSON.stringify([]),
+        created_at: new Date("2026-10-21T09:50:00.000Z"),
+      };
+
+      const plan = planRoomCorrection({
+        text: "same room",
+        latest,
+        now,
+      });
+
+      expect(plan).toEqual({ kind: "none" });
+    });
+
+    it("should return none when same room outside window", () => {
+      const latest: LatestCapture = {
+        id: "cap-1",
+        room_key: "bedroom",
+        room_qualifier: null,
+        suggested_room_label: "Bedroom",
+        items: JSON.stringify([]),
+        created_at: new Date("2026-10-21T09:30:00.000Z"),
+      };
+
+      const plan = planRoomCorrection({
+        text: "same room",
+        latest,
+        now,
+      });
+
+      expect(plan).toEqual({ kind: "none" });
+    });
+
+    it("should behave exactly as before when existingGroups not provided", () => {
+      const latest: LatestCapture = {
+        id: "cap-1",
+        room_key: "bedroom",
+        room_qualifier: null,
+        suggested_room_label: "Bedroom",
+        items: JSON.stringify([
+          { name: "bed", quantity: 1, alreadyCounted: false, estimatedCubicFeet: 50, estimatedWeightKg: 80 },
+        ]),
+        created_at: new Date("2026-10-21T09:50:00.000Z"),
+      };
+
+      const plan = planRoomCorrection({
+        text: "this is the kitchen",
+        latest,
+        now,
+      });
+
+      expect(plan).toEqual({
+        kind: "relabel",
+        captureId: "cap-1",
+        roomKey: "kitchen",
+        qualifier: null,
+        label: "Kitchen",
+        resetDuplicates: false,
+        itemsJson: null,
+        cubicFeet: null,
+        weightKg: null,
+      });
+    });
+
+    it("should not set matchedCount when nothing matched", () => {
+      const latest: LatestCapture = {
+        id: "cap-1",
+        room_key: "bedroom",
+        room_qualifier: null,
+        suggested_room_label: "Bedroom",
+        items: JSON.stringify([
+          { name: "Chair", quantity: 4, estimatedCubicFeet: 40, estimatedWeightKg: 80, alreadyCounted: false },
+        ]),
+        created_at: new Date("2026-10-21T09:50:00.000Z"),
+      };
+
+      const existingGroups = [
+        {
+          roomKey: "kitchen" as any,
+          qualifier: null,
+          label: "Kitchen",
+          items: [{ name: "Table", quantity: 1 }],
+        },
+      ];
+
+      const plan = planRoomCorrection({
+        text: "this is the kitchen",
+        latest,
+        now,
+        existingGroups,
+      });
+
+      expect(plan.kind).toBe("relabel");
+      if (plan.kind === "relabel") {
+        expect(plan.matchedCount).toBeUndefined();
+      }
+    });
   });
 });

@@ -446,5 +446,75 @@ describe("volumetric", () => {
       expect(reply).not.toContain("Added ~");
       expect(reply).toContain('If this is actually a different room, just tell me, for example "this is the master bedroom".');
     });
+
+    it("should include notice when sameTypeNoticeLabel provided", () => {
+      const reply = buildCaptureReply({
+        roomLabel: "Bedroom",
+        items: [{ name: "chair", quantity: 2, alreadyCounted: false }],
+        addedCubicFeet: 10,
+        addedWeightKg: 15,
+        sameTypeNoticeLabel: "Master Bedroom",
+      });
+
+      expect(reply).toContain("I already have photos filed under Master Bedroom");
+      expect(reply).toContain('If this is the same room from another angle, reply "same room"');
+      expect(reply).toContain('If it\'s a different room, tell me which, for example "this is the kids bedroom"');
+      expect(reply).not.toContain("If I've filed this under the wrong room");
+    });
+
+    it("should not include notice when sameTypeNoticeLabel is null", () => {
+      const reply = buildCaptureReply({
+        roomLabel: "Bedroom",
+        items: [{ name: "chair", quantity: 2, alreadyCounted: false }],
+        addedCubicFeet: 10,
+        addedWeightKg: 15,
+        sameTypeNoticeLabel: null,
+      });
+
+      expect(reply).not.toContain("I already have photos filed under");
+      expect(reply).toContain("If I've filed this under the wrong room");
+    });
+
+    it("should not include notice when sameTypeNoticeLabel is empty string", () => {
+      const reply = buildCaptureReply({
+        roomLabel: "Bedroom",
+        items: [{ name: "chair", quantity: 2, alreadyCounted: false }],
+        addedCubicFeet: 10,
+        addedWeightKg: 15,
+        sameTypeNoticeLabel: "",
+      });
+
+      expect(reply).not.toContain("I already have photos filed under");
+      expect(reply).toContain("If I've filed this under the wrong room");
+    });
+
+    it("should output identical to no-notice when notice absent", () => {
+      const baseInput = {
+        roomLabel: "Bedroom",
+        items: [{ name: "chair", quantity: 2, alreadyCounted: false }],
+        addedCubicFeet: 10,
+        addedWeightKg: 15,
+      };
+
+      const withNotice = buildCaptureReply({ ...baseInput, sameTypeNoticeLabel: undefined });
+      const withoutNotice = buildCaptureReply(baseInput);
+
+      expect(withNotice).toBe(withoutNotice);
+    });
+
+    it("should ignore notice in no-new-items form", () => {
+      const reply = buildCaptureReply({
+        roomLabel: "Bedroom",
+        items: [
+          { name: "bed", quantity: 1, alreadyCounted: true },
+        ],
+        addedCubicFeet: 0,
+        addedWeightKg: 0,
+        sameTypeNoticeLabel: "Master Bedroom",
+      });
+
+      expect(reply).toContain("That looks like the same items");
+      expect(reply).not.toContain("I already have photos filed under");
+    });
   });
 });

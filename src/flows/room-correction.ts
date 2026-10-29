@@ -2,7 +2,8 @@
  * Room correction parsing and planning (pure module, no DB dependencies)
  */
 
-import { type RoomKey, normaliseQualifier, roomLabel, computeCaptureTotals } from "./rooms.js";
+import { type RoomKey, normaliseQualifier, roomLabel, computeCaptureTotals, type InventoryGroup } from "./rooms.js";
+import { isSameRoomReply, dedupeItemsAgainstGroup } from "./room-dedupe.js";
 
 export interface RoomCorrection {
   roomKey: RoomKey;
@@ -196,15 +197,28 @@ export interface LatestCapture {
 export type RoomCorrectionPlan =
   | { kind: "none" }
   | { kind: "unchanged"; label: string }
-  | { kind: "relabel"; captureId: string; roomKey: RoomKey; qualifier: string | null; label: string; resetDuplicates: boolean; itemsJson: string | null; cubicFeet: number | null; weightKg: number | null };
+  | { kind: "relabel"; captureId: string; roomKey: RoomKey; qualifier: string | null; label: string; resetDuplicates: boolean; itemsJson: string | null; cubicFeet: number | null; weightKg: number | null; matchedCount?: number };
 
 export function planRoomCorrection(input: {
   text: string;
   latest: LatestCapture | undefined;
   now: Date;
   windowMinutes?: number;
+  existingGroups?: InventoryGroup[];
 }): RoomCorrectionPlan {
-  const parsed = parseRoomCorrection(input.text);
+  let parsed = parseRoomCorrection(input.text);
+  
+  // Handle "same room" replies
+  if (parsed === null && isSameRoomReply(input.text) && input.latest?.room_key) {
+    const latestRoomKey = input.latest.room_key.trim();
+    if (latestRoomKey !== "") {
+      parsed = {
+        roomKey: latestRoomKey as RoomKey,
+        qualifier: normaliseQualifier(input.latest.room_qualifier),
+      };
+    }
+  }
+  
   if (parsed === null) {
     return { kind: "none" };
   }
@@ -230,7 +244,59 @@ export function planRoomCorrection(input: {
   const oldKey = input.latest.room_key ? input.latest.room_key + "|" + (normaliseQualifier(input.latest.room_qualifier) ?? "") : null;
   const newKey = parsed.roomKey + "|" + (parsed.qualifier ?? "");
   
+  // Find target group items
+  const targetGroupItems: Array<{ name: string; quantity: number }> = [];
+  if (input.existingGroups) {
+    for (const group of input.existingGroups) {
+      if (group.roomKey === parsed.roomKey && normaliseQualifier(group.qualifier) === parsed.qualifier) {
+        targetGroupItems.push(...group.items);
+        break;
+      }
+    }
+  }
+  
   if (oldKey === newKey) {
+    // SAME KEY case: check for deduplication
+    if (targetGroupItems.length > 0) {
+      let items: any[];
+      try {
+        const parsed_items = JSON.parse(input.latest.items);
+        if (Array.isArray(parsed_items)) {
+          items = parsed_items;
+          
+          // Dedupe without resetting alreadyCounted
+          const deduped = dedupeItemsAgainstGroup(items, targetGroupItems);
+          
+          if (deduped.matchedUnits > 0) {
+            // Compute totals
+            const totals = computeCaptureTotals(
+              deduped.items.map(i => ({
+                quantity: Number(i.quantity) || 0,
+                estimatedCubicFeet: Number(i.estimatedCubicFeet) || 0,
+                estimatedWeightKg: Number(i.estimatedWeightKg) || 0,
+                alreadyCounted: i.alreadyCounted === true,
+              }))
+            );
+            
+            return {
+              kind: "relabel",
+              captureId: input.latest.id,
+              roomKey: parsed.roomKey,
+              qualifier: parsed.qualifier,
+              label,
+              resetDuplicates: false,
+              itemsJson: JSON.stringify(deduped.items),
+              cubicFeet: totals.cubicFeet,
+              weightKg: totals.weightKg,
+              matchedCount: deduped.matchedUnits,
+            };
+          }
+        }
+      } catch {
+        // Fall through
+      }
+    }
+    
     return { kind: "unchanged", label };
   }
   
@@ -269,11 +335,45 @@ export function planRoomCorrection(input: {
   // Check if any item has alreadyCounted === true
   const hasAlreadyCounted = items.some(i => i.alreadyCounted === true);
   
+  let items2 = items;
+  let resetDuplicates = false;
+  
   if (hasAlreadyCounted) {
     // Reset all alreadyCounted to false
-    const items2 = items.map(i => ({ ...i, alreadyCounted: false }));
+    items2 = items.map(i => ({ ...i, alreadyCounted: false }));
+    resetDuplicates = true;
+  }
+  
+  // Dedupe against target group if present
+  let matchedCount: number | undefined = undefined;
+  let finalItems = items2;
+  let finalCubicFeet: number | null = null;
+  let finalWeightKg: number | null = null;
+  
+  if (targetGroupItems.length > 0) {
+    const deduped = dedupeItemsAgainstGroup(items2, targetGroupItems);
     
-    // Compute totals
+    if (deduped.matchedUnits > 0) {
+      finalItems = deduped.items;
+      matchedCount = deduped.matchedUnits;
+      
+      // Compute totals
+      const totals = computeCaptureTotals(
+        finalItems.map(i => ({
+          quantity: Number(i.quantity) || 0,
+          estimatedCubicFeet: Number(i.estimatedCubicFeet) || 0,
+          estimatedWeightKg: Number(i.estimatedWeightKg) || 0,
+          alreadyCounted: i.alreadyCounted === true,
+        }))
+      );
+      
+      finalCubicFeet = totals.cubicFeet;
+      finalWeightKg = totals.weightKg;
+    }
+  }
+  
+  if (resetDuplicates && matchedCount === undefined) {
+    // Reset case without dedupe
     const totals = computeCaptureTotals(
       items2.map(i => ({
         quantity: Number(i.quantity) || 0,
@@ -283,7 +383,7 @@ export function planRoomCorrection(input: {
       }))
     );
     
-    return {
+    const plan: RoomCorrectionPlan = {
       kind: "relabel",
       captureId: input.latest.id,
       roomKey: parsed.roomKey,
@@ -294,20 +394,26 @@ export function planRoomCorrection(input: {
       cubicFeet: totals.cubicFeet,
       weightKg: totals.weightKg,
     };
+    return plan;
   }
   
-  // No duplicates to reset
-  return {
+  const plan: RoomCorrectionPlan = {
     kind: "relabel",
     captureId: input.latest.id,
     roomKey: parsed.roomKey,
     qualifier: parsed.qualifier,
     label,
-    resetDuplicates: false,
-    itemsJson: null,
-    cubicFeet: null,
-    weightKg: null,
+    resetDuplicates,
+    itemsJson: finalItems !== items2 || finalCubicFeet !== null ? JSON.stringify(finalItems) : null,
+    cubicFeet: finalCubicFeet,
+    weightKg: finalWeightKg,
   };
+  
+  if (matchedCount !== undefined && matchedCount > 0) {
+    plan.matchedCount = matchedCount;
+  }
+  
+  return plan;
 }
 
 export function buildRoomCorrectionReply(plan: RoomCorrectionPlan): string | null {
@@ -321,7 +427,9 @@ export function buildRoomCorrectionReply(plan: RoomCorrectionPlan): string | nul
   
   if (plan.kind === "relabel") {
     let reply = `Done, I've filed your latest photo under ${plan.label}.`;
-    if (plan.resetDuplicates) {
+    if (plan.matchedCount && plan.matchedCount > 0) {
+      reply += ` I matched ${plan.matchedCount} item(s) to what you'd already sent for that room, so I haven't counted them twice.`;
+    } else if (plan.resetDuplicates) {
       reply += " Its items now count toward your move total.";
     }
     reply += ' Tap "Get My Move Total" to see the updated estimate.';
