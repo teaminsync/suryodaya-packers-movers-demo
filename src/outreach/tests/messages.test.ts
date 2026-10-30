@@ -129,4 +129,104 @@ describe("classifyInboundIntent", () => {
 
     expect(result).toBe(expected);
   });
+
+  // New automation payload mappings
+  it("maps nudge_show_times payload to show_times", () => {
+    expect(
+      classifyInboundIntent({
+        type: "button",
+        buttonPayload: "nudge_show_times",
+      }).kind
+    ).toBe("show_times");
+  });
+
+  it("maps nudge_not_now payload to followup_not_now", () => {
+    expect(
+      classifyInboundIntent({
+        type: "button",
+        buttonPayload: "nudge_not_now",
+      }).kind
+    ).toBe("followup_not_now");
+  });
+
+  it("maps nudge_stop payload to opt_out", () => {
+    expect(
+      classifyInboundIntent({
+        type: "button",
+        buttonPayload: "nudge_stop",
+      }).kind
+    ).toBe("opt_out");
+  });
+
+  it("maps reminder_confirm payload", () => {
+    expect(
+      classifyInboundIntent({
+        type: "button",
+        buttonPayload: "reminder_confirm",
+      }).kind
+    ).toBe("reminder_confirm");
+  });
+
+  it("maps reminder_change payload", () => {
+    expect(
+      classifyInboundIntent({
+        type: "button",
+        buttonPayload: "reminder_change",
+      }).kind
+    ).toBe("reminder_change");
+  });
+
+  it("maps missing_talk_human payload", () => {
+    expect(
+      classifyInboundIntent({
+        type: "button",
+        buttonPayload: "missing_talk_human",
+      }).kind
+    ).toBe("talk_human");
+  });
+
+  it("maps show me times button text", () => {
+    expect(
+      classifyInboundIntent({
+        type: "button",
+        buttonText: "Show me times",
+      }).kind
+    ).toBe("show_times");
+  });
+
+  it("maps stop messages button text", () => {
+    expect(
+      classifyInboundIntent({
+        type: "button",
+        buttonText: "Stop messages",
+      }).kind
+    ).toBe("opt_out");
+  });
+
+  it("maps confirm time button text", () => {
+    expect(
+      classifyInboundIntent({
+        type: "button",
+        buttonText: "Confirm time",
+      }).kind
+    ).toBe("reminder_confirm");
+  });
+
+  it("maps change time button text", () => {
+    expect(
+      classifyInboundIntent({
+        type: "button",
+        buttonText: "Change time",
+      }).kind
+    ).toBe("reminder_change");
+  });
+
+  it("maps talk to a human button text", () => {
+    expect(
+      classifyInboundIntent({
+        type: "button",
+        buttonText: "Talk to a human",
+      }).kind
+    ).toBe("talk_human");
+  });
 });

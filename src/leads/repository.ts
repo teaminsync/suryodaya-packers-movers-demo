@@ -444,7 +444,7 @@ export interface MessageRow {
   wamid: string | null;
   direction: "inbound" | "outbound";
   sender_type: "customer" | "ai" | "system" | "human";
-  message_type: "text" | "image" | "video" | "interactive" | "list";
+  message_type: "text" | "image" | "video" | "interactive" | "list" | "button";
   body: string | null;
   media_capture_id: string | null;
   created_at: string;
@@ -458,7 +458,7 @@ export async function createMessage(params: {
   wamid: string | null;
   direction: "inbound" | "outbound";
   senderType: "customer" | "ai" | "system" | "human";
-  messageType: "text" | "image" | "video" | "interactive" | "list";
+  messageType: "text" | "image" | "video" | "interactive" | "list" | "button";
   body: string | null;
   mediaCaptureId?: string | null;
   channel?: string;

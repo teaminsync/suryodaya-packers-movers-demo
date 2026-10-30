@@ -234,4 +234,34 @@ router.post("/survey-settings/reset", async (_req: Request, res: Response) => {
   }
 });
 
+router.get("/leads/:id/automation", async (req: Request, res: Response) => {
+  try {
+    const { automationApi } = await import("../automation/db.js");
+    const leadId = req.params.id as string;
+    const r = await automationApi.getAutomation(leadId);
+    res.status(r.status).json(r.json);
+  } catch (error) {
+    console.error(
+      "[Internal] Automation request failed:",
+      error instanceof Error ? error.message : String(error)
+    );
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
+router.post("/leads/:id/automation/cancel", async (req: Request, res: Response) => {
+  try {
+    const { automationApi } = await import("../automation/db.js");
+    const leadId = req.params.id as string;
+    const r = await automationApi.cancelAction(leadId, req.body);
+    res.status(r.status).json(r.json);
+  } catch (error) {
+    console.error(
+      "[Internal] Automation request failed:",
+      error instanceof Error ? error.message : String(error)
+    );
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
 export default router;

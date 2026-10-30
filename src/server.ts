@@ -131,4 +131,11 @@ app.listen(PORT, async () => {
   } catch (error) {
     console.log("[Calendar] Setup error:", error instanceof Error ? error.message : String(error));
   }
+
+  try {
+    const { startAutomationScheduler } = await import("./automation/db.js");
+    startAutomationScheduler();
+  } catch (error) {
+    console.log("[Followups] Scheduler start error:", error instanceof Error ? error.message : String(error));
+  }
 });

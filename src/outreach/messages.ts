@@ -11,6 +11,10 @@ export type InboundIntent =
   | { kind: "opt_out" }
   | { kind: "followup_yes" }
   | { kind: "followup_not_now" }
+  | { kind: "show_times" }
+  | { kind: "reminder_confirm" }
+  | { kind: "reminder_change" }
+  | { kind: "talk_human" }
   | { kind: "none" };
 
 export function classifyInboundIntent(input: {
@@ -28,6 +32,31 @@ export function classifyInboundIntent(input: {
       return { kind: "followup_not_now" };
     }
 
+    // New automation payloads
+    if (input.buttonPayload === "nudge_show_times") {
+      return { kind: "show_times" };
+    }
+
+    if (input.buttonPayload === "nudge_not_now") {
+      return { kind: "followup_not_now" };
+    }
+
+    if (input.buttonPayload === "nudge_stop") {
+      return { kind: "opt_out" };
+    }
+
+    if (input.buttonPayload === "reminder_confirm") {
+      return { kind: "reminder_confirm" };
+    }
+
+    if (input.buttonPayload === "reminder_change") {
+      return { kind: "reminder_change" };
+    }
+
+    if (input.buttonPayload === "missing_talk_human") {
+      return { kind: "talk_human" };
+    }
+
     if (input.buttonText) {
       const normalized = input.buttonText.trim().toLowerCase();
       if (normalized === "yes, continue") {
@@ -35,6 +64,21 @@ export function classifyInboundIntent(input: {
       }
       if (normalized === "not now") {
         return { kind: "followup_not_now" };
+      }
+      if (normalized === "show me times") {
+        return { kind: "show_times" };
+      }
+      if (normalized === "stop messages") {
+        return { kind: "opt_out" };
+      }
+      if (normalized === "confirm time") {
+        return { kind: "reminder_confirm" };
+      }
+      if (normalized === "change time") {
+        return { kind: "reminder_change" };
+      }
+      if (normalized === "talk to a human") {
+        return { kind: "talk_human" };
       }
     }
 

@@ -311,6 +311,28 @@ async function initSchema(): Promise<void> {
     )
   `;
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS scheduled_actions (
+      id TEXT PRIMARY KEY,
+      lead_id TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      ref TEXT NOT NULL,
+      due_at TIMESTAMPTZ NOT NULL,
+      status TEXT NOT NULL,
+      reason TEXT,
+      channel TEXT,
+      template_name TEXT,
+      wamid TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      processed_at TIMESTAMPTZ,
+      UNIQUE (lead_id, kind, ref)
+    )
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS scheduled_actions_lead_idx ON scheduled_actions (lead_id, created_at DESC)
+  `;
+
   // Lock down all tables to server-only access on Supabase (anon/authenticated roles
   // get full table rights by default). Leaves only SELECT on messages for authenticated
   // users, which the dashboard Realtime subscription needs.
@@ -331,8 +353,9 @@ BEGIN
     ALTER TABLE intake_rejects ENABLE ROW LEVEL SECURITY;
     ALTER TABLE admin_notifications ENABLE ROW LEVEL SECURITY;
     ALTER TABLE survey_settings ENABLE ROW LEVEL SECURITY;
-    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents, intake_rejects, admin_notifications, survey_settings FROM anon;
-    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents, intake_rejects, admin_notifications, survey_settings FROM authenticated;
+    ALTER TABLE scheduled_actions ENABLE ROW LEVEL SECURITY;
+    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents, intake_rejects, admin_notifications, survey_settings, scheduled_actions FROM anon;
+    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents, intake_rejects, admin_notifications, survey_settings, scheduled_actions FROM authenticated;
     GRANT SELECT ON TABLE messages TO authenticated;
     IF NOT EXISTS (
       SELECT 1 FROM pg_policies

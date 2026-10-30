@@ -203,6 +203,19 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
             });
           }
 
+          // Log inbound button messages
+          if (message.type === "button") {
+            const body = intentInput.input.buttonPayload ?? intentInput.input.buttonText ?? null;
+            await createMessage({
+              leadId: lead.id,
+              wamid,
+              direction: "inbound",
+              senderType: "customer",
+              messageType: "button",
+              body,
+            });
+          }
+
           // Step 2a: customer replies to the follow-up (template buttons, STOP)
           if (intent.kind !== "none") {
             let outreach: Awaited<ReturnType<typeof handleInboundOutreach>>;
@@ -226,6 +239,54 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
             }
             console.log("[Webhook] Outreach intent handled:", { leadId: lead.id, kind: intent.kind, action: outreach.action, ackSent: outreach.ackSent });
             if (!outreach.continueWithAi) {
+              continue;
+            }
+          }
+
+          // Step 2b: New automation button intents (reminder confirm/change, show times, talk human)
+          if (!lead.human_takeover) {
+            if (intent.kind === "reminder_confirm") {
+              await whatsappClient.sendMessage(whatsappNumber, "Thanks for confirming. We'll see you then!");
+              await createMessage({
+                leadId: lead.id,
+                wamid: null,
+                direction: "outbound",
+                senderType: "system",
+                messageType: "text",
+                body: "Thanks for confirming. We'll see you then!",
+              });
+              console.log("[Webhook] Reminder confirmed:", lead.id);
+              continue;
+            }
+            if (intent.kind === "show_times" || intent.kind === "reminder_change") {
+              await offerSlotsTo(lead.id, whatsappNumber, lead.status);
+              console.log("[Webhook] Slot offer sent (automation button):", { leadId: lead.id, kind: intent.kind });
+              continue;
+            }
+            if (intent.kind === "talk_human") {
+              await setLeadEscalated(lead.id);
+              
+              void adminNotifier.notifyLead({
+                type: "human_requested",
+                leadId: lead.id,
+                lastMessage: "Tapped Talk to a Human",
+                slotLabel: null,
+              }).catch(() => {});
+              
+              const ackMessage = "Thank you! A team member from Suryodaya will reach out to you shortly.";
+              await whatsappClient.sendMessage(whatsappNumber, ackMessage);
+              
+              // Log outbound escalation ack
+              await createMessage({
+                leadId: lead.id,
+                wamid: null,
+                direction: "outbound",
+                senderType: "system",
+                messageType: "text",
+                body: ackMessage,
+              });
+              
+              console.log("[Webhook] Escalated lead (automation button):", lead.id);
               continue;
             }
           }
@@ -638,6 +699,15 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
             // Check for human takeover flag - skip AI if enabled
             if (lead.human_takeover) {
               console.log("[Webhook] Human takeover active for lead, skipping AI response:", lead.id);
+              continue;
+            }
+
+            // Check for affirmative reply to recent nudge
+            const { isAffirmativeReply } = await import("../automation/messages.js");
+            const { hasRecentNudge } = await import("../automation/db.js");
+            if (isAffirmativeReply(messageText) && await hasRecentNudge(lead.id, new Date())) {
+              await offerSlotsTo(lead.id, whatsappNumber, lead.status);
+              console.log("[Webhook] Nudge reply treated as show-times");
               continue;
             }
 
