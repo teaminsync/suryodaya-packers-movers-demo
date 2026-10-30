@@ -25,7 +25,13 @@ export const automationConfig = config;
 export async function loadFollowupSnapshot(leadId: string): Promise<FollowupSnapshot | null> {
   const leadRows = await sql<any[]>`
     SELECT l.id, l.status, l.human_takeover, l.closed_at, l.origin, l.destination, l.move_type, l.urgency, l.estimated_volume, l.contact_id,
-           c.id AS contact_id_check, c.phone_e164, c.display_name
+           l.created_at,
+           c.id AS contact_id_check, c.phone_e164, c.display_name,
+           NOT EXISTS (
+             SELECT 1 FROM leads l2
+             WHERE l2.contact_id = l.contact_id
+               AND (l2.created_at, l2.id) > (l.created_at, l.id)
+           ) AS is_latest_lead
     FROM leads l
     LEFT JOIN contacts c ON c.id = l.contact_id
     WHERE l.id = ${leadId}
@@ -115,6 +121,7 @@ export async function loadFollowupSnapshot(leadId: string): Promise<FollowupSnap
     consent,
     booking,
     existing,
+    isLatestLead: row.is_latest_lead,
   };
 }
 
@@ -280,19 +287,36 @@ export async function insertCancelled(a: { leadId: string; kind: string; ref: st
 }
 
 export async function hasRecentNudge(leadId: string, now: Date): Promise<boolean> {
-  const cutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+  const { isNudgeReplyEligible } = await import("./rules.js");
 
-  const rows = await sql<any[]>`
-    SELECT 1
+  // Load the most recent sent nudge
+  const nudgeRows = await sql<any[]>`
+    SELECT wamid, processed_at
     FROM scheduled_actions
     WHERE lead_id = ${leadId}
       AND (kind = 'nudge_inwindow' OR kind = 'nudge_template')
       AND status = 'sent'
-      AND processed_at >= ${cutoff}
+    ORDER BY processed_at DESC
     LIMIT 1
   `;
 
-  return rows.length > 0;
+  const nudge = nudgeRows.length > 0
+    ? { wamid: nudgeRows[0].wamid, processedAt: nudgeRows[0].processed_at }
+    : null;
+
+  // Load the most recent outbound message wamid
+  const outboundRows = await sql<any[]>`
+    SELECT wamid
+    FROM messages
+    WHERE lead_id = ${leadId}
+      AND direction = 'outbound'
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+
+  const lastOutboundWamid = outboundRows.length > 0 ? outboundRows[0].wamid : null;
+
+  return isNudgeReplyEligible({ nudge, lastOutboundWamid, now });
 }
 
 export const automationApi = createAutomationApi({

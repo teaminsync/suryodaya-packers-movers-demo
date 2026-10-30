@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from "@jest/globals";
-import { shiftIntoSendHours, missingDetailLabels, planFollowups, isExpired, type FollowupSnapshot } from "../rules.js";
+import { shiftIntoSendHours, missingDetailLabels, planFollowups, isExpired, isNudgeReplyEligible, type FollowupSnapshot } from "../rules.js";
 import type { AutomationConfig } from "../config.js";
 
 describe("shiftIntoSendHours", () => {
@@ -133,6 +133,7 @@ describe("planFollowups", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const actions = planFollowups(snap, cfg, now);
@@ -153,6 +154,7 @@ describe("planFollowups", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const actions = planFollowups(snap, cfg, now);
@@ -172,6 +174,7 @@ describe("planFollowups", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const actions = planFollowups(snap, cfg, now);
@@ -187,6 +190,7 @@ describe("planFollowups", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const actions = planFollowups(snap, cfg, now);
@@ -202,6 +206,7 @@ describe("planFollowups", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const actions = planFollowups(snap, cfg, now);
@@ -217,6 +222,7 @@ describe("planFollowups", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const actions = planFollowups(snap, cfg, now);
@@ -232,6 +238,7 @@ describe("planFollowups", () => {
       consent: "withdrawn",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const actions = planFollowups(snap, cfg, now);
@@ -246,6 +253,7 @@ describe("planFollowups", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const actions = planFollowups(snap, cfg, now);
@@ -261,6 +269,7 @@ describe("planFollowups", () => {
       consent: "granted",
       booking: { offerId: "o1", startsAt: surveyStart, confirmedAt: null },
       existing: [],
+      isLatestLead: true,
     };
 
     const actions = planFollowups(snap, cfg, now);
@@ -278,6 +287,7 @@ describe("planFollowups", () => {
       consent: "granted",
       booking: { offerId: "o1", startsAt: surveyStart, confirmedAt },
       existing: [],
+      isLatestLead: true,
     };
 
     const actions = planFollowups(snap, cfg, now);
@@ -297,6 +307,7 @@ describe("planFollowups", () => {
       consent: "granted",
       booking: { offerId: "o1", startsAt: surveyStart, confirmedAt },
       existing: [],
+      isLatestLead: true,
     };
 
     const actions = planFollowups(snap, cfg, now);
@@ -313,6 +324,7 @@ describe("planFollowups", () => {
       consent: "granted",
       booking: null,
       existing: [{ kind: "nudge_inwindow", ref: lastInbound.toISOString(), status: "sent" }],
+      isLatestLead: true,
     };
 
     const actions = planFollowups(snap, cfg, now);
@@ -331,6 +343,7 @@ describe("planFollowups", () => {
         { kind: "nudge_inwindow", ref: "old1", status: "sent" },
         { kind: "nudge_template", ref: "old2", status: "sent" },
       ],
+      isLatestLead: true,
     };
 
     const actions = planFollowups(snap, cfg, now);
@@ -346,6 +359,7 @@ describe("planFollowups", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const now = new Date("2024-01-20T14:00:00+05:30");
@@ -366,6 +380,7 @@ describe("planFollowups", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const now = new Date("2024-01-20T14:00:00+05:30");
@@ -387,6 +402,7 @@ describe("planFollowups", () => {
       consent: "granted",
       booking: { offerId: "o1", startsAt: surveyStart, confirmedAt: new Date("2024-01-20T14:00:00+05:30") },
       existing: [{ kind: "survey_reminder", ref: "o1", status: "sent" }],
+      isLatestLead: true,
     };
 
     const now = new Date("2024-01-20T14:00:00+05:30");
@@ -406,6 +422,7 @@ describe("planFollowups", () => {
       consent: "granted",
       booking: { offerId: "o1", startsAt: surveyStart, confirmedAt: new Date("2024-01-19T15:00:00+05:30") },
       existing: [{ kind: "survey_reminder", ref: "o1", status: "sent" }],
+      isLatestLead: true,
     };
 
     const now = new Date("2024-01-20T14:00:00+05:30");
@@ -424,6 +441,7 @@ describe("planFollowups", () => {
       consent: "granted",
       booking: { offerId: "o1", startsAt: surveyStart, confirmedAt: new Date("2024-01-19T15:00:00+05:30") },
       existing: [{ kind: "survey_reminder", ref: "o1", status: "sent" }],
+      isLatestLead: true,
     };
 
     const actions = planFollowups(snap, cfg, now);
@@ -441,6 +459,7 @@ describe("planFollowups", () => {
       consent: "granted",
       booking: { offerId: "o1", startsAt: surveyStart, confirmedAt: null },
       existing: [],
+      isLatestLead: true,
     };
 
     const actions = planFollowups(snap, cfg, now);
@@ -473,5 +492,115 @@ describe("isExpired", () => {
       forceSkip: null,
     };
     expect(isExpired(action, now)).toBe(false);
+  });
+});
+
+describe("isLatestLead filtering", () => {
+  const cfg: AutomationConfig = {
+    enabled: true,
+    dryRun: false,
+    tickMinutes: 5,
+    dailyCap: 20,
+    sendFromHour: 9,
+    sendUntilHour: 20,
+    nudgeInWindowHours: 22,
+    nudgeTemplateHours: 48,
+    missingDetailsHours: 3,
+    reminderHoursBefore: 24,
+    reminderLateHours: 3,
+    maxNudges: 2,
+  };
+
+  it("isLatestLead false blocks nudge_inwindow, nudge_template, missing_details", () => {
+    const now = new Date("2024-01-20T14:00:00+05:30");
+    const lastInbound = new Date("2024-01-20T10:00:00+05:30");
+
+    const snap: FollowupSnapshot = {
+      lead: { id: "lead1", status: "gathering", humanTakeover: false, closedAt: null, origin: null, destination: null, moveType: "local", urgency: null, estimatedVolume: "unknown" },
+      contact: { id: "c1", phoneE164: "+919876543210", displayName: "Test" },
+      lastInboundAt: lastInbound,
+      consent: "granted",
+      booking: null,
+      existing: [],
+      isLatestLead: false,
+    };
+
+    const actions = planFollowups(snap, cfg, now);
+    expect(actions.filter(a => a.kind === "nudge_inwindow").length).toBe(0);
+    expect(actions.filter(a => a.kind === "nudge_template").length).toBe(0);
+    expect(actions.filter(a => a.kind === "missing_details").length).toBe(0);
+  });
+
+  it("isLatestLead false allows survey_reminder", () => {
+    const now = new Date("2024-01-20T14:00:00+05:30");
+    const surveyStart = new Date("2024-01-22T10:00:00+05:30");
+
+    const snap: FollowupSnapshot = {
+      lead: { id: "lead1", status: "booked", humanTakeover: false, closedAt: null, origin: "Pune", destination: "Mumbai", moveType: "local", urgency: "medium", estimatedVolume: "2bhk" },
+      contact: { id: "c1", phoneE164: "+919876543210", displayName: "Test" },
+      lastInboundAt: new Date("2024-01-19T12:00:00+05:30"),
+      consent: "granted",
+      booking: { offerId: "o1", startsAt: surveyStart, confirmedAt: null },
+      existing: [],
+      isLatestLead: false,
+    };
+
+    const actions = planFollowups(snap, cfg, now);
+    const reminder = actions.find(a => a.kind === "survey_reminder");
+    expect(reminder).toBeDefined();
+  });
+});
+
+describe("isNudgeReplyEligible", () => {
+  it("returns false when nudge is null", () => {
+    const now = new Date("2024-01-20T14:00:00+05:30");
+    expect(isNudgeReplyEligible({ nudge: null, lastOutboundWamid: "wam1", now })).toBe(false);
+  });
+
+  it("returns false when wamid is null", () => {
+    const now = new Date("2024-01-20T14:00:00+05:30");
+    const processedAt = new Date("2024-01-20T14:05:00+05:30");
+    expect(isNudgeReplyEligible({ nudge: { wamid: null, processedAt }, lastOutboundWamid: "wam1", now })).toBe(false);
+  });
+
+  it("returns false when wamid is blank", () => {
+    const now = new Date("2024-01-20T14:00:00+05:30");
+    const processedAt = new Date("2024-01-20T14:05:00+05:30");
+    expect(isNudgeReplyEligible({ nudge: { wamid: "  ", processedAt }, lastOutboundWamid: "wam1", now })).toBe(false);
+  });
+
+  it("returns false when lastOutboundWamid different", () => {
+    const now = new Date("2024-01-20T14:00:00+05:30");
+    const processedAt = new Date("2024-01-20T13:55:00+05:30");
+    expect(isNudgeReplyEligible({ nudge: { wamid: "wam1", processedAt }, lastOutboundWamid: "wam2", now })).toBe(false);
+  });
+
+  it("returns true when same wamid and processed 5 minutes ago", () => {
+    const now = new Date("2024-01-20T14:00:00+05:30");
+    const processedAt = new Date("2024-01-20T13:55:00+05:30");
+    expect(isNudgeReplyEligible({ nudge: { wamid: "wam1", processedAt }, lastOutboundWamid: "wam1", now })).toBe(true);
+  });
+
+  it("returns false when processed 25 hours ago", () => {
+    const now = new Date("2024-01-21T14:00:00+05:30");
+    const processedAt = new Date("2024-01-20T13:00:00+05:30");
+    expect(isNudgeReplyEligible({ nudge: { wamid: "wam1", processedAt }, lastOutboundWamid: "wam1", now })).toBe(false);
+  });
+
+  it("returns false when processed 2 minutes in the future", () => {
+    const now = new Date("2024-01-20T14:00:00+05:30");
+    const processedAt = new Date("2024-01-20T14:02:00+05:30");
+    expect(isNudgeReplyEligible({ nudge: { wamid: "wam1", processedAt }, lastOutboundWamid: "wam1", now })).toBe(false);
+  });
+
+  it("returns false when processedAt is invalid", () => {
+    const now = new Date("2024-01-20T14:00:00+05:30");
+    expect(isNudgeReplyEligible({ nudge: { wamid: "wam1", processedAt: "invalid" }, lastOutboundWamid: "wam1", now })).toBe(false);
+  });
+
+  it("returns false when lastOutboundWamid is null", () => {
+    const now = new Date("2024-01-20T14:00:00+05:30");
+    const processedAt = new Date("2024-01-20T13:55:00+05:30");
+    expect(isNudgeReplyEligible({ nudge: { wamid: "wam1", processedAt }, lastOutboundWamid: null, now })).toBe(false);
   });
 });

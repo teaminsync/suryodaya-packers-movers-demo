@@ -37,6 +37,7 @@ export interface FollowupSnapshot {
     ref: string;
     status: string;
   }>;
+  isLatestLead: boolean;
 }
 
 export interface PlannedAction {
@@ -119,7 +120,7 @@ export function planFollowups(snap: FollowupSnapshot, cfg: AutomationConfig, now
   const consentWithdrawn = snap.consent === "withdrawn";
 
   // Lead-level guards for nudges and missing_details
-  const blockedForNudges = leadClosed || leadBooked || humanTakeover || noPhone || consentWithdrawn || lastInbound === null;
+  const blockedForNudges = leadClosed || leadBooked || humanTakeover || noPhone || consentWithdrawn || lastInbound === null || !snap.isLatestLead;
 
   if (!blockedForNudges) {
     const L = lastInbound.getTime();
@@ -224,4 +225,40 @@ export function planFollowups(snap: FollowupSnapshot, cfg: AutomationConfig, now
 
 export function isExpired(a: PlannedAction, now: Date): boolean {
   return now.getTime() > a.expiresAt.getTime();
+}
+
+export function isNudgeReplyEligible(input: {
+  nudge: { wamid: string | null; processedAt: Date | string | null } | null;
+  lastOutboundWamid: string | null;
+  now: Date;
+}): boolean {
+  if (input.nudge === null) {
+    return false;
+  }
+
+  if (!input.nudge.wamid || input.nudge.wamid.trim() === "") {
+    return false;
+  }
+
+  if (input.lastOutboundWamid !== input.nudge.wamid) {
+    return false;
+  }
+
+  const processed = parseDate(input.nudge.processedAt);
+  if (processed === null) {
+    return false;
+  }
+
+  const nowMs = input.now.getTime();
+  const processedMs = processed.getTime();
+
+  // Must be between 24 hours ago and 60 seconds in the future
+  const minTime = nowMs - 24 * 60 * 60 * 1000;
+  const maxTime = nowMs + 60 * 1000;
+
+  if (processedMs < minTime || processedMs > maxTime) {
+    return false;
+  }
+
+  return true;
 }

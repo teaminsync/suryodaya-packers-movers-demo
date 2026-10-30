@@ -54,6 +54,7 @@ describe("runFollowupTick", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     let sentCount = 0;
@@ -91,6 +92,7 @@ describe("runFollowupTick", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const skippedRecords: Array<{ kind: string; reason: string }> = [];
@@ -126,6 +128,7 @@ describe("runFollowupTick", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const skippedRecords: Array<{ kind: string; reason: string }> = [];
@@ -160,6 +163,7 @@ describe("runFollowupTick", () => {
       consent: "unknown",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const skippedRecords: Array<{ kind: string; reason: string }> = [];
@@ -193,6 +197,7 @@ describe("runFollowupTick", () => {
       consent: "withdrawn",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const skippedRecords: Array<{ kind: string; reason: string }> = [];
@@ -230,6 +235,7 @@ describe("runFollowupTick", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const skippedRecords: Array<{ kind: string; reason: string }> = [];
@@ -265,6 +271,7 @@ describe("runFollowupTick", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const skippedRecords: Array<{ kind: string; reason: string }> = [];
@@ -298,6 +305,7 @@ describe("runFollowupTick", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const deps: SchedulerDeps = {
@@ -330,6 +338,7 @@ describe("runFollowupTick", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     let failedError: string | null = null;
@@ -365,6 +374,7 @@ describe("runFollowupTick", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const deps: SchedulerDeps = {
@@ -398,6 +408,7 @@ describe("runFollowupTick", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     let sent = 0;
@@ -433,6 +444,7 @@ describe("runFollowupTick", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     let loadCount = 0;
@@ -471,6 +483,7 @@ describe("runFollowupTick", () => {
       consent: "granted",
       booking: { offerId: "o1", startsAt: surveyStart, confirmedAt: null },
       existing: [],
+      isLatestLead: true,
     };
 
     let channel: string | null = null;
@@ -492,5 +505,42 @@ describe("runFollowupTick", () => {
     const result = await runFollowupTick(deps);
     expect(result.sent).toBe(1);
     expect(channel).toBe("template");
+  });
+
+  it("isLatestLead false skips all nudge attempts", async () => {
+    const now = new Date("2024-01-20T14:00:00+05:30");
+    const lastInbound = new Date("2024-01-20T10:00:00+05:30");
+    
+    const snap: FollowupSnapshot = {
+      lead: { id: "lead1", status: "gathering", humanTakeover: false, closedAt: null, origin: null, destination: null, moveType: "local", urgency: null, estimatedVolume: "unknown" },
+      contact: { id: "c1", phoneE164: "+919876543210", displayName: "Test" },
+      lastInboundAt: lastInbound,
+      consent: "granted",
+      booking: null,
+      existing: [],
+      isLatestLead: false,
+    };
+
+    const claimedActions: string[] = [];
+    const sentCalls: string[] = [];
+    const deps: SchedulerDeps = {
+      now: () => now,
+      config: cfg,
+      listCandidateLeadIds: async () => ["lead1"],
+      loadSnapshot: async () => snap,
+      countSentToday: async () => 0,
+      claim: async (a) => { claimedActions.push(a.kind); return true; },
+      recordSkipped: async () => {},
+      markSent: async () => {},
+      markFailed: async () => {},
+      sendFreeform: async (a) => { sentCalls.push("freeform"); return { wamid: null }; },
+      sendTemplate: async (a) => { sentCalls.push("template"); return { wamid: null }; },
+      log: () => {},
+    };
+
+    const result = await runFollowupTick(deps);
+    expect(result.sent).toBe(0);
+    expect(claimedActions.filter(k => k === "nudge_inwindow" || k === "nudge_template" || k === "missing_details").length).toBe(0);
+    expect(sentCalls.length).toBe(0);
   });
 });

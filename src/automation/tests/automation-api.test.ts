@@ -50,6 +50,7 @@ describe("createAutomationApi", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const deps: AutomationApiDeps = {
@@ -86,6 +87,7 @@ describe("createAutomationApi", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const deps: AutomationApiDeps = {
@@ -114,6 +116,7 @@ describe("createAutomationApi", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const deps: AutomationApiDeps = {
@@ -143,6 +146,7 @@ describe("createAutomationApi", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const deps: AutomationApiDeps = {
@@ -200,6 +204,7 @@ describe("createAutomationApi", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     let reason: string | null = null;
@@ -244,6 +249,7 @@ describe("createAutomationApi", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const deps: AutomationApiDeps = {
@@ -272,6 +278,7 @@ describe("createAutomationApi", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const deps: AutomationApiDeps = {
@@ -300,6 +307,7 @@ describe("createAutomationApi", () => {
       consent: "granted",
       booking: null,
       existing: [],
+      isLatestLead: true,
     };
 
     const deps: AutomationApiDeps = {
@@ -315,5 +323,36 @@ describe("createAutomationApi", () => {
 
     expect(result.status).toBe(200);
     expect((result.json as any).ok).toBe(true);
+  });
+
+  it("isLatestLead false excludes nudges and missing_details from upcoming", async () => {
+    const now = new Date("2024-01-20T14:00:00+05:30");
+    const lastInbound = new Date("2024-01-20T10:00:00+05:30");
+    
+    const snap: FollowupSnapshot = {
+      lead: { id: "lead1", status: "gathering", humanTakeover: false, closedAt: null, origin: null, destination: null, moveType: "local", urgency: null, estimatedVolume: "unknown" },
+      contact: { id: "c1", phoneE164: "+919876543210", displayName: "Test" },
+      lastInboundAt: lastInbound,
+      consent: "granted",
+      booking: null,
+      existing: [],
+      isLatestLead: false,
+    };
+
+    const deps: AutomationApiDeps = {
+      getConfig: () => cfg,
+      loadSnapshot: async () => snap,
+      listHistory: async () => [],
+      insertCancelled: async () => "inserted",
+      now: () => now,
+    };
+
+    const api = createAutomationApi(deps);
+    const result = await api.getAutomation("lead1");
+
+    const json = result.json as any;
+    expect(json.upcoming.some((a: any) => a.kind === "nudge_inwindow")).toBe(false);
+    expect(json.upcoming.some((a: any) => a.kind === "nudge_template")).toBe(false);
+    expect(json.upcoming.some((a: any) => a.kind === "missing_details")).toBe(false);
   });
 });
