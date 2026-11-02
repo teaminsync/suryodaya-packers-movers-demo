@@ -35,9 +35,9 @@ export async function finalizeConfirmedBooking(
 ): Promise<{ cancel: "none" | "cancelled" | "not_configured" | "failed" }> {
   const isCalendarFailed = input.claim.status === "failed";
 
-  // Step 1: Plan cancellation of previous offer (only if claim status is "created")
+  // Step 1: Plan cancellation of previous offer (only if claim status is "created" or "failed")
   let cancelPlan = planCancelPrevious(undefined);
-  if (input.claim.status === "created") {
+  if (input.claim.status === "created" || input.claim.status === "failed") {
     try {
       const previous = await deps.findPreviousConfirmedOffer(input.leadId, input.offerId);
       cancelPlan = planCancelPrevious(previous);

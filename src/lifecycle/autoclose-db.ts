@@ -12,11 +12,14 @@ export async function closeFinishedLeads(hours: number): Promise<string[]> {
     WHERE closed_at IS NULL
       AND status = 'booked'
       AND (
-        SELECT max(bo.survey_starts_at)
+        SELECT bo.survey_starts_at
         FROM booking_offers bo
         WHERE bo.lead_id = leads.id
+          AND bo.selected_slot IS NOT NULL
           AND bo.survey_starts_at IS NOT NULL
           AND bo.calendar_status IS DISTINCT FROM 'cancelled'
+        ORDER BY bo.responded_at DESC NULLS LAST, bo.id DESC
+        LIMIT 1
       ) <= now() - make_interval(hours => ${hours})
       AND NOT EXISTS (
         SELECT 1

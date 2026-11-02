@@ -116,22 +116,6 @@ describe("finalizeConfirmedBooking", () => {
     expect(result.cancel).toBe("none");
   });
 
-  it('skips previous-offer lookup when claim status is "failed"', async () => {
-    const deps = makeDeps();
-
-    const result = await finalizeConfirmedBooking(deps, {
-      leadId: "lead1",
-      offerId: "offer1",
-      slot: { label: "Mon at 10 AM" },
-      message: "You're booked!",
-      claim: { ...claim, status: "failed" },
-    });
-
-    expect(deps.calls.find((c) => c.fn === "findPreviousConfirmedOffer")).toBeUndefined();
-    expect(deps.calls.find((c) => c.fn === "cancelEvent")).toBeUndefined();
-    expect(result.cancel).toBe("none");
-  });
-
   it('skips previous-offer lookup when claim status is "not_configured"', async () => {
     const deps = makeDeps();
 
@@ -461,5 +445,102 @@ describe("finalizeConfirmedBooking", () => {
     expect(sendCall?.args[0]).toBe("You're booked!");
     expect(deps.calls.find((c) => c.fn === "notifyBooked")).toBeTruthy();
     expect(deps.calls.find((c) => c.fn === "markNeedsAttention")).toBeUndefined();
+  });
+
+  it('failed claim with previous confirmed offer -> findPreviousConfirmedOffer called', async () => {
+    const deps = makeDeps({
+      async findPreviousConfirmedOffer() {
+        deps.calls.push({ fn: "findPreviousConfirmedOffer", args: Array.from(arguments) });
+        return { id: "old-offer-1", calendar_event_id: "old-evt-1" };
+      },
+    });
+
+    await finalizeConfirmedBooking(deps, {
+      leadId: "lead1",
+      offerId: "offer1",
+      slot: { label: "Tue at 2 PM" },
+      message: "You're booked!",
+      claim: { ...claim, status: "failed" },
+    });
+
+    expect(deps.calls.find((c) => c.fn === "findPreviousConfirmedOffer")).toBeTruthy();
+  });
+
+  it('failed claim with previous offer -> cancelEvent called with event id', async () => {
+    const deps = makeDeps({
+      async findPreviousConfirmedOffer() {
+        deps.calls.push({ fn: "findPreviousConfirmedOffer", args: Array.from(arguments) });
+        return { id: "old-offer-1", calendar_event_id: "old-evt-1" };
+      },
+    });
+
+    await finalizeConfirmedBooking(deps, {
+      leadId: "lead1",
+      offerId: "offer1",
+      slot: { label: "Tue at 2 PM" },
+      message: "You're booked!",
+      claim: { ...claim, status: "failed" },
+    });
+
+    const cancelCall = deps.calls.find((c) => c.fn === "cancelEvent");
+    expect(cancelCall).toBeTruthy();
+    expect(cancelCall?.args[0]).toBe("old-evt-1");
+  });
+
+  it('failed claim with previous offer -> markOfferCalendarCancelled called when cancel returns cancelled', async () => {
+    const deps = makeDeps({
+      async findPreviousConfirmedOffer() {
+        deps.calls.push({ fn: "findPreviousConfirmedOffer", args: Array.from(arguments) });
+        return { id: "old-offer-1", calendar_event_id: "old-evt-1" };
+      },
+      async cancelEvent() {
+        deps.calls.push({ fn: "cancelEvent", args: Array.from(arguments) });
+        return { ok: true, status: "cancelled" };
+      },
+    });
+
+    await finalizeConfirmedBooking(deps, {
+      leadId: "lead1",
+      offerId: "offer1",
+      slot: { label: "Tue at 2 PM" },
+      message: "You're booked!",
+      claim: { ...claim, status: "failed" },
+    });
+
+    const markCall = deps.calls.find((c) => c.fn === "markOfferCalendarCancelled");
+    expect(markCall).toBeTruthy();
+    expect(markCall?.args[0]).toBe("old-offer-1");
+  });
+
+  it('failed claim with no previous offer -> no cancel', async () => {
+    const deps = makeDeps();
+
+    const result = await finalizeConfirmedBooking(deps, {
+      leadId: "lead1",
+      offerId: "offer1",
+      slot: { label: "Tue at 2 PM" },
+      message: "You're booked!",
+      claim: { ...claim, status: "failed" },
+    });
+
+    expect(deps.calls.find((c) => c.fn === "findPreviousConfirmedOffer")).toBeTruthy();
+    expect(deps.calls.find((c) => c.fn === "cancelEvent")).toBeUndefined();
+    expect(result.cancel).toBe("none");
+  });
+
+  it('not_configured claim -> still no lookup', async () => {
+    const deps = makeDeps();
+
+    const result = await finalizeConfirmedBooking(deps, {
+      leadId: "lead1",
+      offerId: "offer1",
+      slot: { label: "Tue at 2 PM" },
+      message: "You're booked!",
+      claim: { ...claim, status: "not_configured" },
+    });
+
+    expect(deps.calls.find((c) => c.fn === "findPreviousConfirmedOffer")).toBeUndefined();
+    expect(deps.calls.find((c) => c.fn === "cancelEvent")).toBeUndefined();
+    expect(result.cancel).toBe("none");
   });
 });

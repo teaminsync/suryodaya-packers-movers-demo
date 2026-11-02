@@ -68,7 +68,7 @@ export async function loadFollowupSnapshot(leadId: string): Promise<FollowupSnap
 
   const consent = currentConsent(consentRows, CONSENT_CHANNEL_WHATSAPP, CONSENT_SCOPE_FOLLOWUP);
 
-  // Most recent booking with selected slot and future survey start
+  // Most recent booking with selected slot and future survey start (ordered by confirmation time)
   const bookingRows = await sql<any[]>`
     SELECT id, selected_slot, survey_starts_at, responded_at, calendar_status
     FROM booking_offers
@@ -76,7 +76,7 @@ export async function loadFollowupSnapshot(leadId: string): Promise<FollowupSnap
       AND selected_slot IS NOT NULL
       AND survey_starts_at IS NOT NULL
       AND calendar_status IS DISTINCT FROM 'cancelled'
-    ORDER BY survey_starts_at DESC
+    ORDER BY responded_at DESC NULLS LAST, id DESC
     LIMIT 1
   `;
 
