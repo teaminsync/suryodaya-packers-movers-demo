@@ -3,8 +3,6 @@
  */
 
 import type { InstagramDeps } from "./handler.js";
-
-const ensureProfileAttempts = new Map<string, number>();
 import {
   isMessageProcessed,
   markMessageProcessed,
@@ -24,13 +22,31 @@ import { resolveEnquiry } from "../leads/intake.js";
 import { intakeDeps } from "../leads/intake-db.js";
 import { processConversationTurn } from "../flows/qualification.js";
 import { buildKnownInfo } from "../flows/known-info.js";
-import { instagramClient } from "./client.js";
+import { createInstagramClient, instagramConfigFromEnv } from "./client.js";
 import { splitForInstagram } from "./messages.js";
 import { setInstagramProfileIfMissing } from "../leads/contacts.js";
 import { sql } from "../leads/db.js";
 import { outreachDeps } from "../outreach/service-db.js";
 import { withRetry } from "../outreach/retry.js";
 import { surveyBookingDeps, surveyCancelDeps } from "../flows/survey-booking-db.js";
+
+const ensureProfileAttempts = new Map<string, number>();
+
+// Create client with dynamic token resolution
+let clientInstance: ReturnType<typeof createInstagramClient> | undefined;
+
+function getInstagramClient() {
+  if (!clientInstance) {
+    clientInstance = createInstagramClient({
+      ...instagramConfigFromEnv(),
+      getAccessToken: async () => {
+        const { getInstagramAccessToken } = await import("../integrations/instagram-token-db.js");
+        return getInstagramAccessToken();
+      },
+    });
+  }
+  return clientInstance;
+}
 
 async function getLastInstagramInboundAt(contactId: string): Promise<string | null> {
   const result = await sql<{ max_at: string | null }[]>`
@@ -93,7 +109,7 @@ export const instagramDeps: InstagramDeps = {
     
     profileAttempts.set(igsid, now);
     
-    const profile = await instagramClient.getProfile(igsid);
+    const profile = await getInstagramClient().getProfile(igsid);
 
     if (profile && (profile.name || profile.username)) {
       await setInstagramProfileIfMissing(contactId, profile);
@@ -142,7 +158,7 @@ export const instagramDeps: InstagramDeps = {
     const chunks = splitForInstagram(input.text);
 
     for (const chunk of chunks) {
-      const result = await instagramClient.sendText(input.igsid, chunk);
+      const result = await getInstagramClient().sendText(input.igsid, chunk);
 
       await createMessage({
         leadId: input.leadId,

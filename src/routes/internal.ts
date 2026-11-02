@@ -45,10 +45,16 @@ router.post("/leads/:id/send-message", async (req: Request, res: Response) => {
   try {
     const { createMessage, findLeadById } = await import("../leads/repository.js");
     const { whatsappClient } = await import("../whatsapp/client.js");
-    const { instagramClient } = await import("../instagram/client.js");
+    const { createInstagramClient, instagramConfigFromEnv } = await import("../instagram/client.js");
+    const { getInstagramAccessToken } = await import("../integrations/instagram-token-db.js");
     const { findIdentityExternalId } = await import("../leads/contacts.js");
     const { lastInstagramInboundAt } = await import("../instagram/handler-db.js");
     const { isServiceWindowOpen } = await import("../outreach/policy.js");
+
+    const instagramClient = createInstagramClient({
+      ...instagramConfigFromEnv(),
+      getAccessToken: getInstagramAccessToken,
+    });
 
     const leadId = req.params.id as string;
     const { text } = req.body as { text?: string };
@@ -258,6 +264,35 @@ router.post("/leads/:id/automation/cancel", async (req: Request, res: Response) 
   } catch (error) {
     console.error(
       "[Internal] Automation request failed:",
+      error instanceof Error ? error.message : String(error)
+    );
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
+router.get("/integrations/instagram", async (_req: Request, res: Response) => {
+  try {
+    const { getInstagramTokenStatus } = await import("../integrations/instagram-token-db.js");
+    const status = await getInstagramTokenStatus();
+    res.json({ ok: true, ...status });
+  } catch (error) {
+    console.error(
+      "[Internal] Instagram token status failed:",
+      error instanceof Error ? error.message : String(error)
+    );
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
+router.post("/integrations/instagram/refresh", async (_req: Request, res: Response) => {
+  try {
+    const { runInstagramTokenMaintenance, getInstagramTokenStatus } = await import("../integrations/instagram-token-db.js");
+    const result = await runInstagramTokenMaintenance({ force: true });
+    const status = await getInstagramTokenStatus();
+    res.json({ ok: result.ok, error: result.error, ...status });
+  } catch (error) {
+    console.error(
+      "[Internal] Instagram token refresh failed:",
       error instanceof Error ? error.message : String(error)
     );
     res.status(500).json({ error: "internal error" });

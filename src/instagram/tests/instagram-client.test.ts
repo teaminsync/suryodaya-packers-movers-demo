@@ -207,4 +207,56 @@ describe("Instagram client", () => {
 
     expect(profile).toBeNull();
   });
+
+  it("getAccessToken is called and token is used", async () => {
+    let getAccessTokenCalls = 0;
+
+    const client = createInstagramClient({
+      accessToken: "FALLBACK_TOKEN",
+      accountId: "ACC1",
+      apiVersion: "v25.0",
+      dryRun: false,
+      getAccessToken: async () => {
+        getAccessTokenCalls++;
+        return "DYNAMIC_TOKEN";
+      },
+    });
+
+    await client.sendText("IG1", "hello");
+
+    expect(getAccessTokenCalls).toBe(1);
+    expect(calls[0].options.headers).toEqual({
+      Authorization: "Bearer DYNAMIC_TOKEN",
+      "Content-Type": "application/json",
+    });
+  });
+
+  it("getAccessToken returns undefined falls back to config.accessToken", async () => {
+    const client = createInstagramClient({
+      accessToken: "FALLBACK_TOKEN",
+      accountId: "ACC1",
+      apiVersion: "v25.0",
+      dryRun: false,
+      getAccessToken: async () => undefined,
+    });
+
+    await client.sendText("IG1", "hello");
+
+    expect(calls[0].options.headers).toEqual({
+      Authorization: "Bearer FALLBACK_TOKEN",
+      "Content-Type": "application/json",
+    });
+  });
+
+  it("throws error when neither getAccessToken nor config.accessToken exists", async () => {
+    const client = createInstagramClient({
+      accessToken: undefined,
+      accountId: "ACC1",
+      apiVersion: "v25.0",
+      dryRun: false,
+      getAccessToken: async () => undefined,
+    });
+
+    await expect(client.sendText("IG1", "hello")).rejects.toThrow("required");
+  });
 });

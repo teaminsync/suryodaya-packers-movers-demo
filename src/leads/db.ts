@@ -349,6 +349,19 @@ async function initSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS scheduled_actions_lead_idx ON scheduled_actions (lead_id, created_at DESC)
   `;
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS integration_tokens (
+      provider TEXT PRIMARY KEY,
+      access_token TEXT NOT NULL,
+      env_fingerprint TEXT NOT NULL,
+      refreshed_at TIMESTAMPTZ,
+      expires_at TIMESTAMPTZ,
+      last_attempt_at TIMESTAMPTZ,
+      last_error TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+
   // Lock down all tables to server-only access on Supabase (anon/authenticated roles
   // get full table rights by default). Leaves only SELECT on messages for authenticated
   // users, which the dashboard Realtime subscription needs.
@@ -371,8 +384,9 @@ BEGIN
     ALTER TABLE survey_settings ENABLE ROW LEVEL SECURITY;
     ALTER TABLE scheduled_actions ENABLE ROW LEVEL SECURITY;
     ALTER TABLE delivery_events ENABLE ROW LEVEL SECURITY;
-    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents, intake_rejects, admin_notifications, survey_settings, scheduled_actions, delivery_events FROM anon;
-    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents, intake_rejects, admin_notifications, survey_settings, scheduled_actions, delivery_events FROM authenticated;
+    ALTER TABLE integration_tokens ENABLE ROW LEVEL SECURITY;
+    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents, intake_rejects, admin_notifications, survey_settings, scheduled_actions, delivery_events, integration_tokens FROM anon;
+    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents, intake_rejects, admin_notifications, survey_settings, scheduled_actions, delivery_events, integration_tokens FROM authenticated;
     GRANT SELECT ON TABLE messages TO authenticated;
     IF NOT EXISTS (
       SELECT 1 FROM pg_policies

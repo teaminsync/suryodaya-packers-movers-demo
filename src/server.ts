@@ -145,4 +145,11 @@ app.listen(PORT, async () => {
   } catch (error) {
     console.log("[Lifecycle] Start error:", error instanceof Error ? error.message : String(error));
   }
+
+  try {
+    const { startInstagramTokenJob } = await import("./integrations/instagram-token-db.js");
+    startInstagramTokenJob();
+  } catch (error) {
+    console.log("[Instagram token] Start error:", error instanceof Error ? error.message : String(error));
+  }
 });

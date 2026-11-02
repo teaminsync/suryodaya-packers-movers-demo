@@ -9,6 +9,7 @@ export interface InstagramClientConfig {
   accountId: string | undefined;
   apiVersion: string;
   dryRun: boolean;
+  getAccessToken?: () => Promise<string | undefined>;
 }
 
 export function createInstagramClient(config: InstagramClientConfig) {
@@ -19,7 +20,10 @@ export function createInstagramClient(config: InstagramClientConfig) {
         return { mid: "dry-" + randomUUID() };
       }
 
-      if (!config.accessToken || !config.accountId) {
+      const accessToken = config.getAccessToken ? await config.getAccessToken() : undefined;
+      const token = accessToken ?? config.accessToken;
+
+      if (!token || !config.accountId) {
         throw new Error("Instagram access token and account ID are required");
       }
 
@@ -34,7 +38,7 @@ export function createInstagramClient(config: InstagramClientConfig) {
       const response = await fetch(url, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${config.accessToken}`,
+          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
@@ -50,7 +54,14 @@ export function createInstagramClient(config: InstagramClientConfig) {
     },
 
     async getProfile(igsid: string): Promise<{ name: string | null; username: string | null } | null> {
-      if (config.dryRun || !config.accessToken || !config.accountId) {
+      if (config.dryRun) {
+        return null;
+      }
+
+      const accessToken = config.getAccessToken ? await config.getAccessToken() : undefined;
+      const token = accessToken ?? config.accessToken;
+
+      if (!token || !config.accountId) {
         return null;
       }
 
@@ -60,7 +71,7 @@ export function createInstagramClient(config: InstagramClientConfig) {
         const response = await fetch(url, {
           method: "GET",
           headers: {
-            Authorization: `Bearer ${config.accessToken}`,
+            Authorization: `Bearer ${token}`,
           },
         });
 
