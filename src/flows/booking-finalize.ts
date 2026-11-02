@@ -5,6 +5,10 @@
 
 import { planCancelPrevious } from "./rebooking.js";
 
+export function buildCalendarPendingMessage(slotLabel: string): string {
+  return `Thanks! I've noted your survey for ${slotLabel}. Our team will confirm the time with you shortly.\n\n— Suryodaya Packers & Movers`;
+}
+
 export interface FinalizeDeps {
   findPreviousConfirmedOffer(leadId: string, excludeOfferId: string): Promise<{ id: string; calendar_event_id: string } | undefined>;
   recordSlotSelection(offerId: string, label: string): Promise<void>;
@@ -15,6 +19,8 @@ export interface FinalizeDeps {
   cancelEvent(eventId: string): Promise<{ ok: true; status: "cancelled" | "not_configured" } | { ok: false; error: string }>;
   markOfferCalendarCancelled(offerId: string): Promise<void>;
   warn(message: string, detail?: unknown): void;
+  notifyCalendarFailed?(slotLabel: string): void;
+  markNeedsAttention?(): Promise<void>;
 }
 
 export async function finalizeConfirmedBooking(
@@ -27,6 +33,8 @@ export async function finalizeConfirmedBooking(
     claim: { status: string; startsAt: Date; endsAt: Date; eventId: string | null; eventLink: string | null };
   }
 ): Promise<{ cancel: "none" | "cancelled" | "not_configured" | "failed" }> {
+  const isCalendarFailed = input.claim.status === "failed";
+
   // Step 1: Plan cancellation of previous offer (only if claim status is "created")
   let cancelPlan = planCancelPrevious(undefined);
   if (input.claim.status === "created") {
@@ -58,12 +66,28 @@ export async function finalizeConfirmedBooking(
   await deps.setBooked(input.leadId);
 
   // Step 5: Send confirmation (errors propagate)
-  await deps.sendConfirmation(input.message);
+  // For failed calendar status, send pending message instead
+  const confirmationText = isCalendarFailed ? buildCalendarPendingMessage(input.slot.label) : input.message;
+  await deps.sendConfirmation(confirmationText);
 
-  // Step 6: Notify (fire-and-forget)
-  deps.notifyBooked(input.slot.label);
+  // Step 6: Mark for attention if calendar failed
+  if (isCalendarFailed && deps.markNeedsAttention) {
+    try {
+      await deps.markNeedsAttention();
+    } catch (error) {
+      deps.warn("Could not mark lead for attention", error);
+    }
+  }
 
-  // Step 7: Execute cancellation plan if needed
+  // Step 7: Notify (fire-and-forget)
+  // For failed calendar, use different notification if provided
+  if (isCalendarFailed && deps.notifyCalendarFailed) {
+    deps.notifyCalendarFailed(input.slot.label);
+  } else {
+    deps.notifyBooked(input.slot.label);
+  }
+
+  // Step 8: Execute cancellation plan if needed
   let cancelResult: "none" | "cancelled" | "not_configured" | "failed" = "none";
   if (cancelPlan.kind === "cancel") {
     try {

@@ -63,6 +63,14 @@ export interface WhatsAppWebhookPayload {
           status: string;
           timestamp: string;
           recipient_id: string;
+          errors?: Array<{
+            code: number | string;
+            title?: string;
+            message?: string;
+            error_data?: {
+              details?: string;
+            };
+          }>;
         }>;
       };
       field: string;

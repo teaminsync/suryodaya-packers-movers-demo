@@ -303,6 +303,22 @@ async function initSchema(): Promise<void> {
   `;
 
   await sql`
+    CREATE TABLE IF NOT EXISTS delivery_events (
+      wamid TEXT PRIMARY KEY,
+      recipient TEXT NOT NULL,
+      error_code TEXT NOT NULL,
+      error_title TEXT,
+      error_detail TEXT,
+      failed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS delivery_events_recipient_idx ON delivery_events (recipient, failed_at DESC)
+  `;
+
+  await sql`
     CREATE TABLE IF NOT EXISTS survey_settings (
       id TEXT PRIMARY KEY,
       settings TEXT NOT NULL,
@@ -354,8 +370,9 @@ BEGIN
     ALTER TABLE admin_notifications ENABLE ROW LEVEL SECURITY;
     ALTER TABLE survey_settings ENABLE ROW LEVEL SECURITY;
     ALTER TABLE scheduled_actions ENABLE ROW LEVEL SECURITY;
-    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents, intake_rejects, admin_notifications, survey_settings, scheduled_actions FROM anon;
-    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents, intake_rejects, admin_notifications, survey_settings, scheduled_actions FROM authenticated;
+    ALTER TABLE delivery_events ENABLE ROW LEVEL SECURITY;
+    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents, intake_rejects, admin_notifications, survey_settings, scheduled_actions, delivery_events FROM anon;
+    REVOKE ALL ON TABLE leads, processed_messages, booking_offers, media_captures, messages, contacts, contact_identities, touchpoints, consents, intake_rejects, admin_notifications, survey_settings, scheduled_actions, delivery_events FROM authenticated;
     GRANT SELECT ON TABLE messages TO authenticated;
     IF NOT EXISTS (
       SELECT 1 FROM pg_policies

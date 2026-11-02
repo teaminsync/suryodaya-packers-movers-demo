@@ -15,6 +15,22 @@ describe("dedupeKeyFor", () => {
     expect(result).toBe("Mon, 21 Oct at 10:00 AM");
   });
 
+  it("returns trimmed slot label for calendar_failed", () => {
+    const result = dedupeKeyFor({
+      type: "calendar_failed",
+      slotLabel: "  Tue, 22 Oct at 2:00 PM  ",
+    });
+    expect(result).toBe("Tue, 22 Oct at 2:00 PM");
+  });
+
+  it("returns null for calendar_failed with null slotLabel", () => {
+    const result = dedupeKeyFor({
+      type: "calendar_failed",
+      slotLabel: null,
+    });
+    expect(result).toBeNull();
+  });
+
   it("returns null for booking_confirmed with null slotLabel", () => {
     const result = dedupeKeyFor({
       type: "booking_confirmed",

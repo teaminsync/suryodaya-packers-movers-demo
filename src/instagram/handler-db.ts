@@ -222,6 +222,17 @@ export const instagramDeps: InstagramDeps = {
           }
         })();
       },
+      notifyCalendarFailed: (slotLabel) => {
+        void (async () => {
+          try {
+            const { adminNotifier } = await import("../notify/notify-db.js");
+            await adminNotifier.notifyLead({ type: "calendar_failed", leadId: ctx.leadId, lastMessage: null, slotLabel });
+          } catch {
+            // Silent failure
+          }
+        })();
+      },
+      markNeedsAttention: () => setLeadEscalated(ctx.leadId),
       cancelEvent: surveyCancelDeps.cancelEvent,
       markOfferCalendarCancelled,
       warn: (message, detail) => console.error("[Instagram]", message, detail ?? ""),

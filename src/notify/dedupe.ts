@@ -5,7 +5,7 @@
 export const NOTIFY_DEDUPE_MINUTES = 10;
 
 export function dedupeKeyFor(event: { type: string; slotLabel: string | null }): string | null {
-  if (event.type === "booking_confirmed") {
+  if (event.type === "booking_confirmed" || event.type === "calendar_failed") {
     const trimmed = event.slotLabel?.trim();
     return trimmed || null;
   }

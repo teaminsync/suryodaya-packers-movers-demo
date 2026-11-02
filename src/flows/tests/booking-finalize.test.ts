@@ -333,4 +333,133 @@ describe("finalizeConfirmedBooking", () => {
     expect(deps.calls.find((c) => c.fn === "cancelEvent")).toBeUndefined();
     expect(result.cancel).toBe("none");
   });
+
+  it('failed status sends pending message containing slot label', async () => {
+    const deps = makeDeps();
+
+    await finalizeConfirmedBooking(deps, {
+      leadId: "lead1",
+      offerId: "offer1",
+      slot: { label: "Tue at 2 PM" },
+      message: "You're booked!",
+      claim: { ...claim, status: "failed" },
+    });
+
+    const sendCall = deps.calls.find((c) => c.fn === "sendConfirmation");
+    expect(sendCall).toBeTruthy();
+    expect(sendCall?.args[0]).toContain("Tue at 2 PM");
+    expect(sendCall?.args[0]).toContain("Our team will confirm the time with you shortly");
+    expect(sendCall?.args[0]).not.toContain("You're booked");
+  });
+
+  it('failed status calls notifyCalendarFailed when provided', async () => {
+    let calendarFailedSlot: string | null = null;
+    const deps = makeDeps({
+      notifyCalendarFailed(slotLabel) {
+        deps.calls.push({ fn: "notifyCalendarFailed", args: Array.from(arguments) });
+        calendarFailedSlot = slotLabel;
+      },
+    });
+
+    await finalizeConfirmedBooking(deps, {
+      leadId: "lead1",
+      offerId: "offer1",
+      slot: { label: "Tue at 2 PM" },
+      message: "You're booked!",
+      claim: { ...claim, status: "failed" },
+    });
+
+    expect(deps.calls.find((c) => c.fn === "notifyCalendarFailed")).toBeTruthy();
+    expect(calendarFailedSlot).toBe("Tue at 2 PM");
+    expect(deps.calls.find((c) => c.fn === "notifyBooked")).toBeUndefined();
+  });
+
+  it('failed status without notifyCalendarFailed falls back to notifyBooked', async () => {
+    const deps = makeDeps();
+
+    await finalizeConfirmedBooking(deps, {
+      leadId: "lead1",
+      offerId: "offer1",
+      slot: { label: "Tue at 2 PM" },
+      message: "You're booked!",
+      claim: { ...claim, status: "failed" },
+    });
+
+    expect(deps.calls.find((c) => c.fn === "notifyBooked")).toBeTruthy();
+    expect(deps.calls.find((c) => c.fn === "notifyCalendarFailed")).toBeUndefined();
+  });
+
+  it('failed status calls markNeedsAttention when provided', async () => {
+    const deps = makeDeps({
+      async markNeedsAttention() {
+        deps.calls.push({ fn: "markNeedsAttention", args: Array.from(arguments) });
+      },
+    });
+
+    await finalizeConfirmedBooking(deps, {
+      leadId: "lead1",
+      offerId: "offer1",
+      slot: { label: "Tue at 2 PM" },
+      message: "You're booked!",
+      claim: { ...claim, status: "failed" },
+    });
+
+    expect(deps.calls.find((c) => c.fn === "markNeedsAttention")).toBeTruthy();
+  });
+
+  it('markNeedsAttention throwing warns but booking completes', async () => {
+    const deps = makeDeps({
+      async markNeedsAttention() {
+        deps.calls.push({ fn: "markNeedsAttention", args: Array.from(arguments) });
+        throw new Error("mark failed");
+      },
+    });
+
+    await finalizeConfirmedBooking(deps, {
+      leadId: "lead1",
+      offerId: "offer1",
+      slot: { label: "Tue at 2 PM" },
+      message: "You're booked!",
+      claim: { ...claim, status: "failed" },
+    });
+
+    const warnCall = deps.calls.find((c) => c.fn === "warn");
+    expect(warnCall).toBeTruthy();
+    expect(warnCall?.args[0]).toContain("mark lead for attention");
+    expect(deps.calls.find((c) => c.fn === "sendConfirmation")).toBeTruthy();
+  });
+
+  it('created status unchanged by calendar failure logic', async () => {
+    const deps = makeDeps();
+
+    await finalizeConfirmedBooking(deps, {
+      leadId: "lead1",
+      offerId: "offer1",
+      slot: { label: "Tue at 2 PM" },
+      message: "You're booked!",
+      claim,
+    });
+
+    const sendCall = deps.calls.find((c) => c.fn === "sendConfirmation");
+    expect(sendCall?.args[0]).toBe("You're booked!");
+    expect(deps.calls.find((c) => c.fn === "notifyBooked")).toBeTruthy();
+    expect(deps.calls.find((c) => c.fn === "markNeedsAttention")).toBeUndefined();
+  });
+
+  it('not_configured status unchanged by calendar failure logic', async () => {
+    const deps = makeDeps();
+
+    await finalizeConfirmedBooking(deps, {
+      leadId: "lead1",
+      offerId: "offer1",
+      slot: { label: "Tue at 2 PM" },
+      message: "You're booked!",
+      claim: { ...claim, status: "not_configured" },
+    });
+
+    const sendCall = deps.calls.find((c) => c.fn === "sendConfirmation");
+    expect(sendCall?.args[0]).toBe("You're booked!");
+    expect(deps.calls.find((c) => c.fn === "notifyBooked")).toBeTruthy();
+    expect(deps.calls.find((c) => c.fn === "markNeedsAttention")).toBeUndefined();
+  });
 });

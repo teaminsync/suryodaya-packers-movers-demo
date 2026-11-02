@@ -10,6 +10,7 @@ describe("notify format", () => {
     expect(eventLabel("booking_confirmed")).toBe("Survey booked");
     expect(eventLabel("human_requested")).toBe("Customer wants a human");
     expect(eventLabel("needs_followup")).toBe("Needs team follow-up");
+    expect(eventLabel("calendar_failed")).toBe("Survey booked, calendar not updated");
   });
 
   it("sourceLabel handles all cases", () => {
@@ -202,5 +203,53 @@ describe("notify format", () => {
       "Rahul Verma (WhatsApp)",
       'Tue, 20 Oct at 10:00 AM | Pune to Mumbai | 3bhk | "Yes book it"',
     ]);
+  });
+
+  it("buildEmail calendar_failed creates correct subject and text", () => {
+    const event: AdminEvent = {
+      type: "calendar_failed",
+      leadId: "L2",
+      source: "whatsapp",
+      customerName: "Priya Sharma",
+      phone: "+919876543210",
+      moveType: "residential",
+      origin: "Delhi",
+      destination: "Gurgaon",
+      estimatedVolume: "2bhk",
+      urgency: "medium",
+      specialItems: [],
+      lastMessage: "book the first slot",
+      slotLabel: "Wed, 21 Oct at 2:00 PM",
+    };
+
+    const { subject, text } = buildEmail(event, "http://localhost:3001/");
+
+    expect(subject).toBe("[Suryodaya] Survey booked, calendar not updated - Priya Sharma (WhatsApp)");
+    expect(text).toContain("Survey booked, calendar not updated");
+    expect(text).toContain("Customer: Priya Sharma (WhatsApp)");
+    expect(text).toContain("Survey slot: Wed, 21 Oct at 2:00 PM");
+  });
+
+  it("buildTemplateParams calendar_failed includes slot label", () => {
+    const event: AdminEvent = {
+      type: "calendar_failed",
+      leadId: "L3",
+      source: "instagram",
+      customerName: "Test User",
+      phone: null,
+      moveType: "residential",
+      origin: "Mumbai",
+      destination: "Pune",
+      estimatedVolume: "1bhk",
+      urgency: "low",
+      specialItems: [],
+      lastMessage: null,
+      slotLabel: "Thu, 22 Oct at 11:00 AM",
+    };
+
+    const params = buildTemplateParams(event);
+
+    expect(params[0]).toBe("Survey booked, calendar not updated");
+    expect(params[2]).toContain("Thu, 22 Oct at 11:00 AM");
   });
 });

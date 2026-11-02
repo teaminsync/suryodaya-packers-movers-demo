@@ -138,4 +138,11 @@ app.listen(PORT, async () => {
   } catch (error) {
     console.log("[Followups] Scheduler start error:", error instanceof Error ? error.message : String(error));
   }
+
+  try {
+    const { startLifecycleJobs } = await import("./lifecycle/autoclose-db.js");
+    startLifecycleJobs();
+  } catch (error) {
+    console.log("[Lifecycle] Start error:", error instanceof Error ? error.message : String(error));
+  }
 });

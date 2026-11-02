@@ -2,7 +2,7 @@
  * Admin notification types
  */
 
-export type AdminEventType = "booking_confirmed" | "human_requested" | "needs_followup";
+export type AdminEventType = "booking_confirmed" | "human_requested" | "needs_followup" | "calendar_failed";
 
 export interface AdminEvent {
   type: AdminEventType;

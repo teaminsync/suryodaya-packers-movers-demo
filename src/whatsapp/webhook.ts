@@ -69,6 +69,20 @@ export function handleWebhook(req: Request, res: Response): void {
   // Quick ack to Meta (required for fast response)
   res.sendStatus(200);
 
+  // Record delivery failures (fire-and-forget, after signature check)
+  (async () => {
+    try {
+      const { extractFailedDeliveries } = await import("./delivery.js");
+      const failures = extractFailedDeliveries(req.body);
+      if (failures.length > 0) {
+        const { recordFailedDeliveries } = await import("./delivery-db.js");
+        await recordFailedDeliveries(failures);
+      }
+    } catch (error) {
+      console.error("[Webhook] Delivery failure recording error:", error instanceof Error ? error.message : String(error));
+    }
+  })();
+
   // Process the webhook asynchronously (don't block the response)
   enqueueBySender(senderKeyFromPayload(payload), () => processWebhook(payload)).catch((error) => {
     console.error("[Webhook] Processing failed:", error);
@@ -460,6 +474,10 @@ async function processWebhook(payload: WhatsAppWebhookPayload): Promise<void> {
                       notifyBooked: (slotLabel) => {
                         void adminNotifier.notifyLead({ type: "booking_confirmed", leadId: lead.id, lastMessage: null, slotLabel }).catch(() => {});
                       },
+                      notifyCalendarFailed: (slotLabel) => {
+                        void adminNotifier.notifyLead({ type: "calendar_failed", leadId: lead.id, lastMessage: null, slotLabel }).catch(() => {});
+                      },
+                      markNeedsAttention: () => setLeadEscalated(lead.id),
                       cancelEvent: surveyCancelDeps.cancelEvent,
                       markOfferCalendarCancelled,
                       warn: (message, detail) => console.error("[Webhook]", message, detail ?? ""),

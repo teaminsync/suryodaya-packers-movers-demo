@@ -13,6 +13,8 @@ export function eventLabel(type: AdminEventType): string {
       return "Customer wants a human";
     case "needs_followup":
       return "Needs team follow-up";
+    case "calendar_failed":
+      return "Survey booked, calendar not updated";
   }
 }
 
