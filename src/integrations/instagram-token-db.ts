@@ -154,12 +154,9 @@ export async function runInstagramTokenMaintenance(opts?: {
   const nowIso = now.toISOString();
 
   if (result.ok) {
-    const newFingerprint = tokenFingerprint(result.token);
-
     await sql`
       UPDATE integration_tokens
       SET access_token = ${result.token},
-          env_fingerprint = ${newFingerprint},
           refreshed_at = ${nowIso},
           expires_at = ${result.expiresAt.toISOString()},
           last_attempt_at = ${nowIso},
