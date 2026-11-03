@@ -303,9 +303,39 @@ export class ClaudeAdapter implements AIProviderAdapter {
         }),
       });
 
+      if (!response.ok) {
+        try {
+          const body = await response.json() as any;
+          const errorType = body?.error?.type || "";
+          const errorMessage = body?.error?.message || "";
+          const preview = errorType && errorMessage 
+            ? `${errorType}: ${errorMessage}`
+            : (await response.text()).substring(0, 150);
+          
+          const sanitized = `[Claude] Key validation failed: HTTP ${response.status} ${preview}`
+            .replace(/sk-ant-[^\s]*/g, "[redacted]")
+            .substring(0, 200);
+          
+          console.warn(sanitized);
+        } catch {
+          const textBody = await response.text();
+          const preview = textBody.substring(0, 150);
+          const sanitized = `[Claude] Key validation failed: HTTP ${response.status} ${preview}`
+            .replace(/sk-ant-[^\s]*/g, "[redacted]")
+            .substring(0, 200);
+          
+          console.warn(sanitized);
+        }
+      }
+
       return response.ok;
     } catch (error) {
-      console.error("[Claude] Key validation failed:", error);
+      const message = error instanceof Error ? error.message : String(error);
+      const sanitized = `[Claude] Key validation failed: ${message}`
+        .replace(/sk-ant-[^\s]*/g, "[redacted]")
+        .substring(0, 200);
+      
+      console.warn(sanitized);
       return false;
     }
   }
