@@ -304,38 +304,50 @@ export class ClaudeAdapter implements AIProviderAdapter {
       });
 
       if (!response.ok) {
+        let raw = "";
         try {
-          const body = await response.json() as any;
-          const errorType = body?.error?.type || "";
-          const errorMessage = body?.error?.message || "";
-          const preview = errorType && errorMessage 
-            ? `${errorType}: ${errorMessage}`
-            : (await response.text()).substring(0, 150);
-          
-          const sanitized = `[Claude] Key validation failed: HTTP ${response.status} ${preview}`
-            .replace(/sk-ant-[^\s]*/g, "[redacted]")
-            .substring(0, 200);
-          
-          console.warn(sanitized);
+          raw = await response.text();
         } catch {
-          const textBody = await response.text();
-          const preview = textBody.substring(0, 150);
-          const sanitized = `[Claude] Key validation failed: HTTP ${response.status} ${preview}`
-            .replace(/sk-ant-[^\s]*/g, "[redacted]")
-            .substring(0, 200);
-          
-          console.warn(sanitized);
+          // If reading fails, use empty string
         }
+
+        let detail = "";
+        try {
+          const parsed = JSON.parse(raw);
+          const errorType = parsed?.error?.type;
+          const errorMessage = parsed?.error?.message;
+          if (
+            typeof errorType === "string" &&
+            errorType.trim() !== "" &&
+            typeof errorMessage === "string" &&
+            errorMessage.trim() !== ""
+          ) {
+            detail = `${errorType}: ${errorMessage}`;
+          } else {
+            detail = raw.trim().slice(0, 150);
+          }
+        } catch {
+          detail = raw.trim().slice(0, 150);
+        }
+
+        const message = `[Claude] Key validation failed: HTTP ${response.status} ${detail}`
+          .replace(/sk-ant-[A-Za-z0-9_-]+/g, "[redacted]")
+          .replace(/\s+/g, " ")
+          .substring(0, 200);
+
+        console.warn(message);
+        return false;
       }
 
-      return response.ok;
+      return true;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const sanitized = `[Claude] Key validation failed: ${message}`
-        .replace(/sk-ant-[^\s]*/g, "[redacted]")
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const message = `[Claude] Key validation failed: ${errorMessage}`
+        .replace(/sk-ant-[A-Za-z0-9_-]+/g, "[redacted]")
+        .replace(/\s+/g, " ")
         .substring(0, 200);
-      
-      console.warn(sanitized);
+
+      console.warn(message);
       return false;
     }
   }
