@@ -47,7 +47,7 @@ On start you should see, in order: database connected and schema initialised, th
 
 1. Run `ngrok http 3000` and set the Meta webhook callback to `https://<your-tunnel>/webhook`, using `WHATSAPP_WEBHOOK_VERIFY_TOKEN` as the verify token.
 2. The Meta test number can only message **recipients you have added** in the Meta dashboard.
-3. Instagram has its own webhook and verify token; see `src/instagram/route.ts` and where it is mounted in `src/server.ts`.
+3. Instagram has its own webhook: set the callback to `https://<your-tunnel>/webhook/instagram` with `INSTAGRAM_WEBHOOK_VERIFY_TOKEN` as the verify token.
 4. Start the dashboard from its own repo (port 3001) with the same `INTERNAL_API_SECRET`.
 
 `GET /health` is a simple liveness check.
