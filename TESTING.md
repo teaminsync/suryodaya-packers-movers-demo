@@ -1,193 +1,76 @@
-# Testing Guide - AI Layer Real Validation
+# Testing: Express backend
 
-This document contains instructions for running the **REAL API tests** required by Spec 01, Section 6.
+Last reviewed 4 November 2026 (Express `85a6e03`, 75 suites, 1047 tests).
 
-## ⚠️ Important Notes
+## 1. Automated tests
 
-- These tests make **REAL API calls** to Claude and Gemini
-- They will **consume API credits**
-- Only run when explicitly needed for validation
-- You will need to **paste back terminal output** as evidence
-
-## Prerequisites
-
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-2. Set up your `.env` file based on which tests you're running (see below)
-
-## Test 6.1: Live Gemini
-
-**Purpose**: Verify Gemini standalone operation
-
-**Requirements**:
-- `GEMINI_API_KEY` must be set
-- Can run with or without other provider keys
-
-**Setup**:
-```bash
-# In your .env file:
-GEMINI_API_KEY=your_actual_gemini_key
-GEMINI_MODEL=gemini-3.6-flash
-
-# Make sure this is NOT set or is commented out:
-# ANTHROPIC_API_KEY=
+```powershell
+npm run build          # tsc, must be clean (noUnusedLocals is on)
+npm run test:unit      # fast, offline; the list of files is in package.json
 ```
 
-**Run**:
-```bash
+- `npm run test:unit` runs an explicit list of test files. **When you add a test file, append its name to that list**, or it will silently never run.
+- Tests are Jest in ESM mode (`node --experimental-vm-modules`). Test files import from `@jest/globals`.
+- Logic is kept in **pure modules** (no database, network or `process.env`) with dependencies injected, so the rules are unit-testable: policy, planner, parsers, message builders, the scheduler tick, the settings provider, token logic and delivery extraction. Thin `*-db.ts` files wire these to SQL and are covered by the live checks below, not by unit tests.
+- `npm test` runs every Jest test; live tests inside it only run when `RUN_LIVE_TESTS=true`.
+
+## 2. Live provider tests (cost money)
+
+```powershell
 npm run test:live:gemini
-```
-
-**What to paste back**:
-1. The startup log showing provider configuration
-2. Full terminal output for both tests (text-only and vision)
-3. The structured log lines for each call
-4. Confirmation of `providerUsed: "gemini"` and `wasFailover: false`
-
----
-
-## Test 6.2: Live Claude
-
-**Purpose**: Verify Claude operation and failover availability
-
-**Requirements**:
-- `GEMINI_API_KEY` must be set (failover provider)
-- `ANTHROPIC_API_KEY` must be set **and valid**
-
-**Setup**:
-```bash
-# In your .env file:
-GEMINI_API_KEY=your_actual_gemini_key
-GEMINI_MODEL=gemini-3.6-flash
-
-ANTHROPIC_API_KEY=your_actual_anthropic_key
-CLAUDE_MODEL=claude-sonnet-5
-```
-
-**Run**:
-```bash
 npm run test:live:claude
-```
-
-**What to paste back**:
-1. The startup log showing provider configuration
-2. Full terminal output for both tests (text-only and vision)
-3. The structured log lines for each call
-4. Confirmation of `providerUsed: "claude"` and `wasFailover: false`
-
----
-
-## Test 6.3: Forced Failover
-
-**Purpose**: Verify failover mechanism when primary provider fails
-
-**Requirements**:
-- Same setup as 6.2 (valid keys for Claude and Gemini)
-- Test will **temporarily corrupt** `CLAUDE_MODEL` to force failure
-- Test will restore the original value after running
-
-**Setup**:
-```bash
-# Same as Test 6.2 - start with valid keys
-GEMINI_API_KEY=your_actual_gemini_key
-ANTHROPIC_API_KEY=your_actual_anthropic_key
-CLAUDE_MODEL=claude-sonnet-5
-```
-
-**Run**:
-```bash
 npm run test:live:failover
 ```
 
-**Expected behavior**:
-1. Router initializes with Claude and Gemini configured
-2. Test corrupts `CLAUDE_MODEL` to trigger a Claude API error (404/400)
-3. Router logs the Claude failure
-4. Router automatically tries Gemini
-5. Request succeeds via Gemini with `wasFailover: true`
-6. Test restores original `CLAUDE_MODEL`
+The Claude test requires a **funded** Anthropic account. With an unfunded key the router logs `[Claude] Key validation failed: HTTP 400 invalid_request_error: Your credit balance is too low ...` and skips Claude, and the live test fails its "expected PRODUCTION mode" guard. That is a billing problem, not a code problem. To try Claude in the real chat path, set `AI_TEXT_CHAIN=claude,gemini,groq`, restart, and check that the startup line reads `text: claude -> gemini -> groq` and replies log `providerUsed: "claude"`. Restore the demo chain afterwards.
 
-**What to paste back**:
-1. The startup log showing provider configuration
-2. The warning log showing corrupted CLAUDE_MODEL
-3. The full log sequence showing:
-   - Claude failure (with reason)
-   - Automatic Gemini call
-   - Success with `wasFailover: true`
-4. The final response data proving the request actually completed
+## 3. Conformance
 
----
+`npm run conformance` runs the AI against scripted scenarios and checks its answers against the company facts (options: `CONFORMANCE_ONLY`, `CONFORMANCE_PROVIDER`; see `src/conformance/run.ts`). Run it before any prospect session. Scenario S05 (insurance) matters most: the model must not claim insurance is offered.
 
-## Unit Tests (Mocked)
+## 4. Manual live checklists
 
-These don't make real API calls - they test routing logic with mocks.
+Use the WhatsApp test number and the dashboard. For fast timings set the `FOLLOWUPS_*` values noted in `.env.example`, and **remove those overrides afterwards**.
 
-**Run**:
-```bash
-npm run test:unit
+**Survey settings**
+1. Settings shows "Using .env defaults". Add tomorrow as a holiday, save, ask for a survey: tomorrow is not offered, with no restart.
+2. Change the end time, save, ask again: no offered slot ends after it.
+3. Enter a survey length of 5: blocked in the form and nothing is saved.
+4. Reset to defaults: slots return to normal. In SQL, `select relrowsecurity from pg_class where relname = 'survey_settings'` is true and `has_table_privilege('anon','public.survey_settings','select')` is false.
+
+**Duplicate-photo handling**
+1. Send a sofa photo twice: the second reply says it is already counted. "Get My Move Total" is unchanged.
+2. Send a bedroom photo, then again, reply "this is the kids bedroom": it files under Kids Bedroom. "same day" and "I want the same price" must go to the AI, not the room logic.
+
+**Follow-ups** (`FOLLOWUPS_ENABLED=true`, optionally `FOLLOWUPS_DRY_RUN=true` first)
+1. Dry run logs `DRY RUN would send` and sends nothing; the dashboard badge reads "Dry run".
+2. Live: a missing-details text, then a check-in nudge arrive. Reply `yes`: numbered slots, no AI call. Reply `yes` again after another message: it goes to the AI.
+3. Cancel an item in Up next: it moves to History as Cancelled and never sends.
+4. STOP: confirm the unsubscribe text and that Up next empties. Re-grant consent from the Outreach card before the next test.
+5. Reminder: book a survey, stay silent past the window; the `survey_reminder` template arrives with buttons. Tap Confirm time and Change time; both taps appear in the dashboard chat.
+6. A contact with an old unbooked lead plus a newer one: only the newer lead is ever nudged.
+
+**Failures**
+1. Calendar failure: temporarily alter `GOOGLE_CALENDAR_ID`, book a slot. Expect the "we'll confirm" text, an alert titled "Survey booked, calendar not updated" and a red calendar badge. Restore the ID.
+2. Delivery card: `npx tsx src/delivery-simulate.ts <digits>` shows the card; `--clear` removes it.
+3. Rebooking: book a later slot then an earlier one; Up next follows the latest and the old calendar event disappears.
+
+**Lifecycle and Instagram**
+1. Auto-close: booked leads whose survey ended more than 48 hours ago and with no recent inbound message get `closed_at`; the active lead stays open.
+2. Instagram token: Settings shows "valid for about 59 more day(s)" after a restart. Pressing Refresh now straight after is refused (a day must pass). Setting `expires_at` to five days ahead in SQL shows an amber banner in the dashboard header.
+3. Send an Instagram DM: the bot replies.
+
+## 4a. Safe SQL helpers
+
+```sql
+-- inspect without exposing secrets
+select provider, refreshed_at, expires_at, last_error from integration_tokens;
+select * from consents where contact_id = '<id>' order by captured_at desc;
+select id, status, closed_at, created_at from leads where contact_id = '<id>' order by created_at;
 ```
 
-No special setup needed - these always pass if the router logic is correct.
+Never select the `access_token` column or paste tokens into chat.
 
----
+## 5. Not covered by automation (gaps)
 
-## Troubleshooting
-
-### "GEMINI_API_KEY is required"
-- You forgot to set `GEMINI_API_KEY` in `.env`
-- Or you're running tests without the `.env` file loaded
-
-### "All AI providers failed"
-- All configured providers failed (when multiple providers are available)
-- Check all API keys are valid
-- Check you have API credits remaining for each provider
-- Check network connectivity
-
-### Test hangs / times out
-- The default timeout is 30s for text, 60s for vision
-- If your network is slow or API is under load, this might not be enough
-- Check the debug logs to see where it's stuck
-
----
-
-## Cost Estimates
-
-Approximate API costs per test run (as of Aug 2026):
-
-- **Gemini 3.6 Flash**: Free tier covers testing, or ~$0.0001 per request
-- **Claude Sonnet 5**: ~$0.003 per text request, ~$0.015 per vision request
-
-Running all three test suites: < $0.05 total
-
----
-
-## Evidence Checklist
-
-For each test (6.1, 6.2, 6.3), provide:
-
-- [ ] Complete terminal output (copy-paste, not summary)
-- [ ] Startup mode detection log line
-- [ ] Structured call result JSON logs
-- [ ] Raw response data showing schema compliance
-- [ ] Confirmation of `providerUsed` and `wasFailover` values
-- [ ] Any warnings or unexpected behavior
-
----
-
-## Next Steps After Tests Pass
-
-Once you have clean output from all three test suites:
-
-1. Paste the full terminal output back to the spec author
-2. Include any warnings or unexpected behavior
-3. Wait for sign-off before moving to the next spec (WhatsApp integration)
-
-The evidence proves:
-- Mode detection works correctly
-- Both providers work standalone
-- Failover actually triggers and recovers
-- Schema validation catches bad responses
-- Logging captures what we need for debugging
+The SQL wiring in `*-db.ts` files, the webhook as a whole, real Meta failure payloads and the Claude production chain have no automated test. Cover them with the checklists above before any change that touches them.
